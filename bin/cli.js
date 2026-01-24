@@ -81,11 +81,16 @@ function install() {
   let useShell = false;
 
   if (platform === 'windows') {
-    // Windows: 优先使用 install-windows.ps1，fallback 到 install.ps1
-    installScript = join(packageDir, 'install-windows.ps1');
+    // Windows: 优先使用修复后的脚本
+    const scripts = ['install-windows-final.ps1', 'install-windows-v2.ps1', 'install-windows.ps1', 'install.ps1'];
 
-    if (!existsSync(installScript)) {
-      installScript = join(packageDir, 'install.ps1');
+    for (const script of scripts) {
+      installScript = join(packageDir, script);
+      if (existsSync(installScript)) {
+        const scriptName = script;
+        log('green', `  ✓ 找到 Windows 安装脚本 (${scriptName})`);
+        break;
+      }
     }
 
     if (!existsSync(installScript)) {
@@ -93,9 +98,6 @@ function install() {
       log('yellow', '请确保包安装正确');
       process.exit(1);
     }
-
-    const scriptName = installScript.endsWith('install-windows.ps1') ? 'install-windows.ps1' : 'install.ps1';
-    log('green', `  ✓ 找到 Windows 安装脚本 (${scriptName})`);
   } else {
     // Linux/macOS: 使用 bash 脚本
     installScript = join(packageDir, 'install.sh');
