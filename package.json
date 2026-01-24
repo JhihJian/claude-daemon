@@ -1,0 +1,45 @@
+{
+  "name": "@jhihjian/claude-daemon",
+  "version": "1.1.0",
+  "description": "Claude Code 会话历史记录系统 - 自动记录、分类和分析 Claude Code 会话",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "session-history",
+    "hooks",
+    "ai",
+    "typescript",
+    "bun"
+  ],
+  "author": "JhihJian <JhihJian@users.noreply.github.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/JhihJian/claude-daemon#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JhihJian/claude-daemon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JhihJian/claude-daemon/issues"
+  },
+  "bin": {
+    "claude-daemon": "./bin/cli.js"
+  },
+  "files": [
+    "hooks/",
+    "lib/",
+    "tools/",
+    "bin/",
+    "install.sh",
+    "README.md",
+    "QUICKSTART.md"
+  ],
+  "scripts": {
+    "postinstall": "echo '\n🎉 @jhihjian/claude-daemon 安装成功！\n\n使用方法:\n  npx @jhihjian/claude-daemon install\n\n或查看文档:\n  https://github.com/JhihJian/claude-daemon\n'"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

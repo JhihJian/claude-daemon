@@ -1,0 +1,41 @@
+# 开发文件
+.git/
+.gitignore
+*.md.backup
+
+# 测试文件
+test/
+
+# 文档（部分）
+FIX-REPORT.md
+HOSTNAME-FEATURE.md
+IMPROVEMENTS.md
+PLUGIN-INSTALL-PLAN.md
+PUSH-GUIDE.md
+RELEASE-SUCCESS.md
+
+# 脚本（不需要发布的）
+package.sh
+setup-auto-sync.sh
+setup-git.sh
+setup-git.ps1
+sync-git.sh
+sync-git.ps1
+quick-install.sh
+
+# Windows 特定文件（可选）
+install.ps1
+WINDOWS.md
+WINDOWS-QUICKSTART.md
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# 临时文件
+*.tmp
+*.log
