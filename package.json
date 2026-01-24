@@ -1,6 +1,6 @@
 {
   "name": "@jhihjian/claude-daemon",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Claude Code 会话历史记录系统 - 自动记录、分类和分析 Claude Code 会话",
   "keywords": [
     "claude",
@@ -31,6 +31,7 @@
     "bin/",
     "install.sh",
     "install.ps1",
+    "install-windows.ps1",
     "README.md",
     "QUICKSTART.md"
   ],

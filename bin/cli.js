@@ -81,16 +81,21 @@ function install() {
   let useShell = false;
 
   if (platform === 'windows') {
-    // Windows: 使用 PowerShell 脚本
-    installScript = join(packageDir, 'install.ps1');
+    // Windows: 优先使用 install-windows.ps1，fallback 到 install.ps1
+    installScript = join(packageDir, 'install-windows.ps1');
 
     if (!existsSync(installScript)) {
-      log('red', '✗ 找不到 install.ps1');
+      installScript = join(packageDir, 'install.ps1');
+    }
+
+    if (!existsSync(installScript)) {
+      log('red', '✗ 找不到 Windows 安装脚本');
       log('yellow', '请确保包安装正确');
       process.exit(1);
     }
 
-    log('green', '  ✓ 找到 Windows 安装脚本 (install.ps1)');
+    const scriptName = installScript.endsWith('install-windows.ps1') ? 'install-windows.ps1' : 'install.ps1';
+    log('green', `  ✓ 找到 Windows 安装脚本 (${scriptName})`);
   } else {
     // Linux/macOS: 使用 bash 脚本
     installScript = join(packageDir, 'install.sh');
