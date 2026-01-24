@@ -3,11 +3,13 @@
 /**
  * claude-daemon CLI
  * npm 包的命令行入口
+ * 支持 Windows、Linux、macOS
  */
 
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const { join } = require('path');
 const { existsSync } = require('fs');
+const os = require('os');
 
 const COLORS = {
   reset: '\x1b[0m',
@@ -43,44 +45,134 @@ function printUsage() {
   console.log('');
 }
 
+/**
+ * 检测系统平台
+ */
+function detectPlatform() {
+  const platform = os.platform();
+
+  if (platform === 'win32') {
+    return 'windows';
+  } else if (platform === 'darwin') {
+    return 'macos';
+  } else if (platform === 'linux') {
+    return 'linux';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * 安装函数
+ */
 function install() {
   printBanner();
-  log('green', '[1/3] 定位安装脚本...');
+
+  const platform = detectPlatform();
+  log('green', `[1/4] 检测系统平台: ${platform}`);
+  console.log('');
+
+  log('green', '[2/4] 定位安装脚本...');
 
   // 获取包的安装路径
   const packageDir = join(__dirname, '..');
-  const installScript = join(packageDir, 'install.sh');
 
-  if (!existsSync(installScript)) {
-    log('red', '✗ 找不到 install.sh');
-    log('yellow', '请确保包安装正确');
-    process.exit(1);
+  let installScript;
+  let useShell = false;
+
+  if (platform === 'windows') {
+    // Windows: 使用 PowerShell 脚本
+    installScript = join(packageDir, 'install.ps1');
+
+    if (!existsSync(installScript)) {
+      log('red', '✗ 找不到 install.ps1');
+      log('yellow', '请确保包安装正确');
+      process.exit(1);
+    }
+
+    log('green', '  ✓ 找到 Windows 安装脚本 (install.ps1)');
+  } else {
+    // Linux/macOS: 使用 bash 脚本
+    installScript = join(packageDir, 'install.sh');
+    useShell = true;
+
+    if (!existsSync(installScript)) {
+      log('red', '✗ 找不到 install.sh');
+      log('yellow', '请确保包安装正确');
+      process.exit(1);
+    }
+
+    log('green', '  ✓ 找到安装脚本 (install.sh)');
   }
 
-  log('green', '  ✓ 找到安装脚本');
   console.log('');
-
-  log('green', '[2/3] 执行安装...');
+  log('green', '[3/4] 执行安装...');
   console.log('');
 
   try {
-    // 执行安装脚本
-    execSync(`bash "${installScript}"`, {
-      stdio: 'inherit',
-      cwd: packageDir,
-    });
+    if (platform === 'windows') {
+      // Windows: 使用 PowerShell 执行
+      const powershell = spawn('powershell.exe', [
+        '-ExecutionPolicy', 'Bypass',
+        '-File', installScript
+      ], {
+        stdio: 'inherit',
+        cwd: packageDir,
+      });
+
+      powershell.on('close', (code) => {
+        if (code !== 0) {
+          log('red', '\n✗ 安装失败');
+          log('yellow', '请查看错误信息并重试');
+          log('yellow', '\n提示: 如果遇到权限问题，请以管理员身份运行 PowerShell');
+          process.exit(1);
+        }
+
+        printSuccess(platform);
+      });
+
+    } else {
+      // Linux/macOS: 使用 bash 执行
+      execSync(`bash "${installScript}"`, {
+        stdio: 'inherit',
+        cwd: packageDir,
+      });
+
+      printSuccess(platform);
+    }
+
   } catch (error) {
     log('red', '\n✗ 安装失败');
     log('yellow', '请查看错误信息并重试');
+
+    if (platform === 'windows') {
+      log('yellow', '\n提示: 如果遇到权限问题，请以管理员身份运行 PowerShell');
+    }
+
     process.exit(1);
+  }
+}
+
+/**
+ * 打印安装成功信息
+ */
+function printSuccess(platform) {
+  console.log('');
+  log('green', '[4/4] 安装完成！');
+  console.log('');
+  log('yellow', '下一步:');
+
+  if (platform === 'windows') {
+    console.log('  1. 重启终端或重新加载 PowerShell 配置');
+    console.log('  2. 测试: claude-sessions recent 5');
+  } else {
+    console.log('  1. 重新加载 shell: source ~/.bashrc  (或 source ~/.zshrc)');
+    console.log('  2. 测试: claude-sessions recent 5');
   }
 
   console.log('');
-  log('green', '[3/3] 安装完成！');
-  console.log('');
-  log('yellow', '下一步:');
-  console.log('  1. 重新加载 shell: source ~/.bashrc');
-  console.log('  2. 测试: claude-sessions recent 5');
+  log('yellow', '查看文档:');
+  console.log('  https://github.com/JhihJian/claude-daemon');
   console.log('');
 }
 
