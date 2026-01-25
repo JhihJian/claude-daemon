@@ -1,120 +1,233 @@
 #!/usr/bin/env bun
 /**
- * 守护进程主入口（集成 Hook Server）
- *
- * 演示如何接收 Hook 推送的数据并统一处理
+ * 守护进程主入口
+ * Claude Code Daemon - 完整实现
  */
 
 import { HookServer, HookEvent } from './hook-server.ts';
-import { appendFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
-import { config } from '../lib/config.ts';
+import { EventQueue, QueuedEvent } from './event-queue.ts';
+import { StorageService } from './storage-service.ts';
+import { SessionAnalyzer } from './session-analyzer.ts';
+import { Scheduler } from './scheduler.ts';
+import { HealthMonitor } from './health-monitor.ts';
+import { CleanupService } from './cleanup-service.ts';
 import { createHookLogger } from '../lib/logger.ts';
 
 const logger = createHookLogger('ClaudeDaemon');
 
 class ClaudeDaemon {
   private hookServer: HookServer;
+  private eventQueue: EventQueue;
+  private storage: StorageService;
+  private analyzer: SessionAnalyzer;
+  private scheduler: Scheduler;
+  private healthMonitor: HealthMonitor;
+  private cleanupService: CleanupService;
   private running = false;
 
   constructor() {
+    // 初始化服务
     this.hookServer = new HookServer();
-    this.setupEventHandlers();
+    this.eventQueue = new EventQueue();
+    this.storage = new StorageService();
+    this.analyzer = new SessionAnalyzer(this.storage);
+    this.scheduler = new Scheduler();
+    this.healthMonitor = new HealthMonitor();
+    this.cleanupService = new CleanupService();
+
+    // 设置 Hook 事件处理器
+    this.setupHookHandlers();
+
+    // 设置事件队列处理器
+    this.setupQueueHandlers();
+
+    // 设置定时任务
+    this.setupScheduledTasks();
   }
 
   /**
-   * 设置事件处理器
+   * 设置 Hook 事件处理器
    */
-  private setupEventHandlers(): void {
-    // 处理会话启动事件
+  private setupHookHandlers(): void {
+    // 会话启动
     this.hookServer.on('session_start', async (event: HookEvent) => {
-      logger.info('Session started', {
-        sessionId: event.session_id,
-        workingDir: event.data.working_directory,
-        user: event.data.user,
-        hostname: event.data.hostname,
+      await this.eventQueue.enqueue({
+        id: `${event.session_id}-start`,
+        type: 'session_start',
+        data: event,
+        timestamp: Date.now(),
       });
-
-      // 保存到文件
-      await this.saveEvent(event);
-
-      // 可以做更多事情...
-      // - 发送桌面通知
-      // - 记录到数据库
-      // - 实时统计
     });
 
-    // 处理工具使用事件
+    // 工具使用
     this.hookServer.on('tool_use', async (event: HookEvent) => {
-      logger.info('Tool used', {
-        sessionId: event.session_id,
-        toolName: event.data.tool_name,
-        success: event.data.success,
+      await this.eventQueue.enqueue({
+        id: `${event.session_id}-tool-${Date.now()}`,
+        type: 'tool_use',
+        data: event,
+        timestamp: Date.now(),
+      });
+    });
+
+    // 会话结束
+    this.hookServer.on('session_end', async (event: HookEvent) => {
+      await this.eventQueue.enqueue({
+        id: `${event.session_id}-end`,
+        type: 'session_end',
+        data: event,
+        timestamp: Date.now(),
+      });
+    });
+  }
+
+  /**
+   * 设置事件队列处理器
+   */
+  private setupQueueHandlers(): void {
+    // 处理会话启动
+    this.eventQueue.on('session_start', async (event: QueuedEvent) => {
+      const hookEvent = event.data as HookEvent;
+
+      logger.info('Session started', {
+        sessionId: hookEvent.session_id,
+        workingDir: hookEvent.data.working_directory,
+        user: hookEvent.data.user,
+        hostname: hookEvent.data.hostname,
       });
 
-      await this.saveEvent(event);
+      // 保存原始事件
+      await this.storage.saveEvent({
+        event_type: hookEvent.event_type,
+        session_id: hookEvent.session_id,
+        timestamp: hookEvent.timestamp,
+        data: hookEvent.data,
+      });
 
-      // 实时监控
-      if (event.data.success === false) {
+      // 通知分析器
+      await this.analyzer.onSessionStart(hookEvent.session_id, hookEvent.data);
+    });
+
+    // 处理工具使用
+    this.eventQueue.on('tool_use', async (event: QueuedEvent) => {
+      const hookEvent = event.data as HookEvent;
+
+      logger.debug('Tool used', {
+        sessionId: hookEvent.session_id,
+        toolName: hookEvent.data.tool_name,
+        success: hookEvent.data.success,
+      });
+
+      // 保存原始事件
+      await this.storage.saveEvent({
+        event_type: hookEvent.event_type,
+        session_id: hookEvent.session_id,
+        timestamp: hookEvent.timestamp,
+        data: hookEvent.data,
+      });
+
+      // 通知分析器
+      await this.analyzer.onToolUse(hookEvent.session_id, hookEvent.data);
+
+      // 实时监控失败
+      if (hookEvent.data.success === false) {
         logger.warn('Tool execution failed', {
-          toolName: event.data.tool_name,
-          sessionId: event.session_id,
+          toolName: hookEvent.data.tool_name,
+          sessionId: hookEvent.session_id,
         });
-
-        // 可以发送告警
-        // await this.sendAlert('Tool execution failed');
       }
     });
 
-    // 处理会话结束事件
-    this.hookServer.on('session_end', async (event: HookEvent) => {
+    // 处理会话结束
+    this.eventQueue.on('session_end', async (event: QueuedEvent) => {
+      const hookEvent = event.data as HookEvent;
+
       logger.info('Session ended', {
-        sessionId: event.session_id,
+        sessionId: hookEvent.session_id,
       });
 
-      await this.saveEvent(event);
+      // 保存原始事件
+      await this.storage.saveEvent({
+        event_type: hookEvent.event_type,
+        session_id: hookEvent.session_id,
+        timestamp: hookEvent.timestamp,
+        data: hookEvent.data,
+      });
 
-      // 触发会话分析
-      await this.analyzeSession(event.session_id);
+      // 触发分析
+      const summary = await this.analyzer.onSessionEnd(
+        hookEvent.session_id,
+        hookEvent.data
+      );
+
+      if (summary) {
+        logger.info('Session analysis completed', {
+          sessionId: summary.session_id,
+          type: summary.session_type,
+          tools: summary.total_tools,
+          duration: summary.duration_seconds,
+        });
+      }
     });
   }
 
   /**
-   * 保存事件到存储
+   * 设置定时任务
    */
-  private async saveEvent(event: HookEvent): Promise<void> {
-    try {
-      const cfg = config.get();
-      const yearMonth = config.getYearMonth();
-      const rawDir = join(cfg.rawDir, yearMonth);
+  private setupScheduledTasks(): void {
+    // 健康检查 - 每 5 分钟
+    this.scheduler.register({
+      name: 'health-check',
+      interval: 5 * 60 * 1000,
+      enabled: true,
+      handler: async () => {
+        const status = await this.healthMonitor.check();
 
-      // 确保目录存在
-      mkdirSync(rawDir, { recursive: true });
+        if (!status.healthy) {
+          logger.warn('Health check failed', {
+            issues: status.issues.length,
+          });
+        }
+      },
+    });
 
-      // 写入 JSONL 文件
-      const sessionFile = config.getSessionFilePath(event.session_id, yearMonth);
-      appendFileSync(sessionFile, JSON.stringify(event) + '\n', { mode: 0o600 });
+    // 数据清理 - 每天凌晨 3 点（实际使用时可改为 cron）
+    this.scheduler.register({
+      name: 'cleanup',
+      interval: 24 * 60 * 60 * 1000,
+      enabled: true,
+      handler: async () => {
+        logger.info('Running scheduled cleanup...');
 
-      logger.debug('Event saved', {
-        sessionId: event.session_id,
-        eventType: event.event_type,
-      });
-    } catch (error) {
-      logger.error('Failed to save event', {
-        error: error instanceof Error ? error.message : String(error),
-        event,
-      });
-    }
-  }
+        const result = await this.cleanupService.cleanup({
+          maxAgeDays: 90,
+          maxSizeGB: 5,
+          dryRun: false,
+        });
 
-  /**
-   * 分析会话（示例）
-   */
-  private async analyzeSession(sessionId: string): Promise<void> {
-    logger.info('Analyzing session', { sessionId });
+        logger.info('Cleanup completed', {
+          filesDeleted: result.filesDeleted,
+          mbFreed: Math.round(result.bytesFreed / (1024 * 1024)),
+          duration: result.duration,
+        });
+      },
+    });
 
-    // 这里可以调用现有的 SessionAnalyzer 逻辑
-    // 或者实现新的实时分析
+    // 活跃会话监控 - 每分钟
+    this.scheduler.register({
+      name: 'session-monitor',
+      interval: 60 * 1000,
+      enabled: true,
+      handler: async () => {
+        const activeSessions = this.analyzer.getActiveSessionsStatus();
+
+        if (activeSessions.length > 0) {
+          logger.debug('Active sessions', {
+            count: activeSessions.length,
+            sessions: activeSessions,
+          });
+        }
+      },
+    });
   }
 
   /**
@@ -127,18 +240,30 @@ class ClaudeDaemon {
 
     // 1. 启动 Hook Server
     await this.hookServer.start();
-    logger.info('Hook server started');
+    logger.info('✓ Hook server started');
 
-    // 2. 启动其他服务...
-    // - 定时任务
-    // - 健康检查
-    // - 资源监控
+    // 2. 启动调度器
+    this.scheduler.start();
+    logger.info('✓ Scheduler started');
 
-    // 3. 设置信号处理
+    // 3. 执行首次健康检查
+    const health = await this.healthMonitor.check();
+    if (health.healthy) {
+      logger.info('✓ Initial health check passed');
+    } else {
+      logger.warn('⚠ Initial health check failed', {
+        issues: health.issues,
+      });
+    }
+
+    // 4. 设置信号处理
     this.setupSignalHandlers();
 
-    logger.info('Claude Daemon started successfully');
-    logger.info('Waiting for hook events...');
+    logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    logger.info('🚀 Claude Daemon started successfully');
+    logger.info('   Waiting for hook events...');
+    logger.info('   Press Ctrl+C to stop');
+    logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     // 保持进程运行
     process.stdin.resume();
@@ -148,14 +273,29 @@ class ClaudeDaemon {
    * 优雅关闭
    */
   private async shutdown(): Promise<void> {
-    logger.info('Shutting down...');
+    if (!this.running) return;
+
+    logger.info('Shutting down gracefully...');
 
     this.running = false;
 
-    // 停止 Hook Server
-    await this.hookServer.stop();
+    // 1. 停止调度器
+    this.scheduler.stop();
+    logger.info('✓ Scheduler stopped');
 
-    logger.info('Shutdown complete');
+    // 2. 停止 Hook Server
+    await this.hookServer.stop();
+    logger.info('✓ Hook server stopped');
+
+    // 3. 等待队列清空
+    const queueStatus = this.eventQueue.getStatus();
+    if (queueStatus.queueSize > 0) {
+      logger.info(`Waiting for ${queueStatus.queueSize} queued events to process...`);
+      // 简单等待（实际可以更优雅）
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    logger.info('✓ Shutdown complete');
   }
 
   /**
@@ -171,6 +311,18 @@ class ClaudeDaemon {
     process.on('SIGTERM', () => handleSignal('SIGTERM'));
     process.on('SIGINT', () => handleSignal('SIGINT'));
   }
+
+  /**
+   * 获取守护进程状态
+   */
+  getStatus() {
+    return {
+      running: this.running,
+      queue: this.eventQueue.getStatus(),
+      activeSessions: this.analyzer.getActiveSessionsStatus(),
+      scheduler: this.scheduler.getStatus(),
+    };
+  }
 }
 
 // 启动守护进程
@@ -182,3 +334,5 @@ if (import.meta.main) {
     process.exit(1);
   });
 }
+
+export { ClaudeDaemon };

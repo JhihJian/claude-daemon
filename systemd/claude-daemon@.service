@@ -1,0 +1,31 @@
+[Unit]
+Description=Claude Code Daemon
+Documentation=https://github.com/JhihJian/claude-daemon
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h
+ExecStart=%h/.bun/bin/bun %h/.claude/daemon/main.ts
+Restart=always
+RestartSec=10
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-daemon
+
+# 资源限制
+LimitNOFILE=65536
+MemoryMax=512M
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.claude/SESSIONS
+
+[Install]
+WantedBy=default.target

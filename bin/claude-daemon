@@ -1,0 +1,266 @@
+#!/usr/bin/env bun
+/**
+ * daemon-ctl - 守护进程控制工具
+ * 用于管理 Claude Daemon 的启动、停止、状态查询等
+ */
+
+import { connect } from 'net';
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+import { spawn } from 'child_process';
+
+const DAEMON_SOCKET = '/tmp/claude-daemon.sock';
+const PID_FILE = join(homedir(), '.claude/daemon.pid');
+const LOG_FILE = join(homedir(), '.claude/daemon.log');
+
+const COLORS = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  red: '\x1b[31m',
+  gray: '\x1b[90m',
+};
+
+function log(color: keyof typeof COLORS, message: string) {
+  console.log(`${COLORS[color]}${message}${COLORS.reset}`);
+}
+
+/**
+ * 检查守护进程是否在运行
+ */
+function isDaemonRunning(): { running: boolean; pid?: number } {
+  if (!existsSync(PID_FILE)) {
+    return { running: false };
+  }
+
+  try {
+    const pid = parseInt(readFileSync(PID_FILE, 'utf-8').trim(), 10);
+
+    // 检查进程是否存在
+    try {
+      process.kill(pid, 0); // Signal 0 只检查进程是否存在
+      return { running: true, pid };
+    } catch {
+      // 进程不存在，清理 PID 文件
+      unlinkSync(PID_FILE);
+      return { running: false };
+    }
+  } catch {
+    return { running: false };
+  }
+}
+
+/**
+ * 启动守护进程
+ */
+async function startDaemon(): Promise<void> {
+  const status = isDaemonRunning();
+
+  if (status.running) {
+    log('yellow', `✗ Daemon already running (PID: ${status.pid})`);
+    return;
+  }
+
+  log('blue', 'Starting Claude Daemon...');
+
+  // 获取守护进程脚本路径
+  const daemonScript = join(__dirname, '../daemon/main.ts');
+
+  if (!existsSync(daemonScript)) {
+    log('red', `✗ Daemon script not found: ${daemonScript}`);
+    process.exit(1);
+  }
+
+  // 启动守护进程（后台运行）
+  const daemon = spawn('bun', [daemonScript], {
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  // 保存 PID
+  writeFileSync(PID_FILE, String(daemon.pid), { mode: 0o600 });
+
+  // 重定向日志
+  const logStream = require('fs').createWriteStream(LOG_FILE, { flags: 'a' });
+  daemon.stdout?.pipe(logStream);
+  daemon.stderr?.pipe(logStream);
+
+  // 分离进程
+  daemon.unref();
+
+  // 等待一秒检查启动是否成功
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  const newStatus = isDaemonRunning();
+
+  if (newStatus.running) {
+    log('green', `✓ Daemon started successfully (PID: ${newStatus.pid})`);
+    log('gray', `  Log file: ${LOG_FILE}`);
+  } else {
+    log('red', '✗ Daemon failed to start');
+    log('gray', `  Check log file: ${LOG_FILE}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * 停止守护进程
+ */
+async function stopDaemon(): Promise<void> {
+  const status = isDaemonRunning();
+
+  if (!status.running) {
+    log('yellow', '✗ Daemon is not running');
+    return;
+  }
+
+  log('blue', `Stopping Claude Daemon (PID: ${status.pid})...`);
+
+  try {
+    // 发送 SIGTERM 信号
+    process.kill(status.pid!, 'SIGTERM');
+
+    // 等待进程退出
+    let attempts = 0;
+    while (attempts < 10) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      try {
+        process.kill(status.pid!, 0);
+        attempts++;
+      } catch {
+        // 进程已退出
+        break;
+      }
+    }
+
+    // 检查是否成功停止
+    try {
+      process.kill(status.pid!, 0);
+      log('yellow', '⚠ Daemon did not stop gracefully, force killing...');
+      process.kill(status.pid!, 'SIGKILL');
+    } catch {
+      // 成功停止
+    }
+
+    // 清理 PID 文件
+    if (existsSync(PID_FILE)) {
+      unlinkSync(PID_FILE);
+    }
+
+    log('green', '✓ Daemon stopped');
+  } catch (error) {
+    log('red', `✗ Failed to stop daemon: ${error}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * 重启守护进程
+ */
+async function restartDaemon(): Promise<void> {
+  log('blue', 'Restarting Claude Daemon...');
+  await stopDaemon();
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  await startDaemon();
+}
+
+/**
+ * 查看守护进程状态
+ */
+async function showStatus(): Promise<void> {
+  const status = isDaemonRunning();
+
+  if (!status.running) {
+    log('red', '● Claude Daemon is not running');
+    return;
+  }
+
+  log('green', `● Claude Daemon is running (PID: ${status.pid})`);
+  log('gray', `  Socket: ${DAEMON_SOCKET}`);
+  log('gray', `  PID file: ${PID_FILE}`);
+  log('gray', `  Log file: ${LOG_FILE}`);
+
+  // 尝试连接并获取详细状态
+  // TODO: 实现通过 socket 获取详细状态
+}
+
+/**
+ * 查看日志
+ */
+async function showLogs(lines: number = 50): Promise<void> {
+  if (!existsSync(LOG_FILE)) {
+    log('yellow', '✗ No log file found');
+    return;
+  }
+
+  // 使用 tail 显示最后 N 行
+  const { spawn } = require('child_process');
+  const tail = spawn('tail', ['-n', String(lines), LOG_FILE]);
+
+  tail.stdout.on('data', (data: Buffer) => {
+    process.stdout.write(data);
+  });
+
+  await new Promise(resolve => {
+    tail.on('close', resolve);
+  });
+}
+
+/**
+ * 主函数
+ */
+async function main() {
+  const command = process.argv[2];
+  const arg = process.argv[3];
+
+  switch (command) {
+    case 'start':
+      await startDaemon();
+      break;
+
+    case 'stop':
+      await stopDaemon();
+      break;
+
+    case 'restart':
+      await restartDaemon();
+      break;
+
+    case 'status':
+      await showStatus();
+      break;
+
+    case 'logs':
+      const lines = arg ? parseInt(arg, 10) : 50;
+      await showLogs(lines);
+      break;
+
+    case 'help':
+    case '--help':
+    case '-h':
+    case undefined:
+      console.log('Claude Daemon Control Tool\n');
+      console.log('Usage:');
+      console.log('  claude-daemon start       Start the daemon');
+      console.log('  claude-daemon stop        Stop the daemon');
+      console.log('  claude-daemon restart     Restart the daemon');
+      console.log('  claude-daemon status      Show daemon status');
+      console.log('  claude-daemon logs [N]    Show last N lines of logs (default: 50)');
+      console.log('  claude-daemon help        Show this help message');
+      break;
+
+    default:
+      log('red', `Unknown command: ${command}`);
+      console.log('Run "claude-daemon help" for usage information');
+      process.exit(1);
+  }
+}
+
+// 运行
+main().catch(error => {
+  console.error('Error:', error);
+  process.exit(1);
+});
