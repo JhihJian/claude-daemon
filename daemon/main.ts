@@ -12,6 +12,7 @@ import { Scheduler } from './scheduler.ts';
 import { HealthMonitor } from './health-monitor.ts';
 import { CleanupService } from './cleanup-service.ts';
 import { createHookLogger } from '../lib/logger.ts';
+import WebServer from '../web/server.ts';
 
 const logger = createHookLogger('ClaudeDaemon');
 
@@ -23,6 +24,7 @@ class ClaudeDaemon {
   private scheduler: Scheduler;
   private healthMonitor: HealthMonitor;
   private cleanupService: CleanupService;
+  private webServer?: WebServer;
   private running = false;
 
   constructor() {
@@ -166,6 +168,14 @@ class ClaudeDaemon {
           tools: summary.total_tools,
           duration: summary.duration_seconds,
         });
+
+        // 通过 WebSocket 广播更新
+        if (this.webServer) {
+          this.webServer.broadcast({
+            type: 'session_update',
+            data: summary,
+          });
+        }
       }
     });
   }
@@ -233,7 +243,7 @@ class ClaudeDaemon {
   /**
    * 启动守护进程
    */
-  async start(): Promise<void> {
+  async start(options?: { enableWebUI?: boolean; webPort?: number }): Promise<void> {
     this.running = true;
 
     logger.info('Starting Claude Daemon...');
@@ -246,7 +256,15 @@ class ClaudeDaemon {
     this.scheduler.start();
     logger.info('✓ Scheduler started');
 
-    // 3. 执行首次健康检查
+    // 3. 启动 Web UI（可选）
+    if (options?.enableWebUI) {
+      const port = options?.webPort || 3000;
+      this.webServer = new WebServer(port);
+      await this.webServer.start();
+      logger.info('✓ Web UI started');
+    }
+
+    // 4. 执行首次健康检查
     const health = await this.healthMonitor.check();
     if (health.healthy) {
       logger.info('✓ Initial health check passed');
@@ -256,12 +274,15 @@ class ClaudeDaemon {
       });
     }
 
-    // 4. 设置信号处理
+    // 5. 设置信号处理
     this.setupSignalHandlers();
 
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logger.info('🚀 Claude Daemon started successfully');
     logger.info('   Waiting for hook events...');
+    if (this.webServer) {
+      logger.info(`   Web UI: http://127.0.0.1:${options?.webPort || 3000}`);
+    }
     logger.info('   Press Ctrl+C to stop');
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
@@ -279,15 +300,21 @@ class ClaudeDaemon {
 
     this.running = false;
 
-    // 1. 停止调度器
+    // 1. 停止 Web 服务器
+    if (this.webServer) {
+      await this.webServer.stop();
+      logger.info('✓ Web server stopped');
+    }
+
+    // 2. 停止调度器
     this.scheduler.stop();
     logger.info('✓ Scheduler stopped');
 
-    // 2. 停止 Hook Server
+    // 3. 停止 Hook Server
     await this.hookServer.stop();
     logger.info('✓ Hook server stopped');
 
-    // 3. 等待队列清空
+    // 4. 等待队列清空
     const queueStatus = this.eventQueue.getStatus();
     if (queueStatus.queueSize > 0) {
       logger.info(`Waiting for ${queueStatus.queueSize} queued events to process...`);
