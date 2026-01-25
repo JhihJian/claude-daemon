@@ -222,23 +222,23 @@ function extractConversation(transcriptPath: string | undefined, sessionId: stri
       const entry = safeJSONParse<any>(line, null, 'transcript line');
       if (!entry) continue;
 
+      if (entry.type === 'tool_use' || entry.type === 'tool_result') {
+        continue;
+      }
+
       // 提取用户消息
-      if (entry.type === 'user' && entry.message?.content) {
-        userMessages.push(entry.message.content);
+      if (entry.type === 'user') {
+        const text = normalizeContent(entry.message?.content ?? entry.content ?? null);
+        if (text) {
+          userMessages.push(text);
+        }
       }
 
       // 提取助手回复
-      if (entry.type === 'assistant' && entry.message?.content) {
-        const content = entry.message.content;
-        if (Array.isArray(content)) {
-          // 提取 text 类型的内容
-          const textContent = content
-            .filter(c => c.type === 'text')
-            .map(c => c.text)
-            .join('\n');
-          if (textContent) {
-            assistantResponses.push(textContent);
-          }
+      if (entry.type === 'assistant') {
+        const text = normalizeContent(entry.message?.content ?? entry.content ?? null);
+        if (text) {
+          assistantResponses.push(text);
         }
       }
     }
@@ -264,6 +264,31 @@ function extractConversation(transcriptPath: string | undefined, sessionId: stri
       message_count: 0
     };
   }
+}
+
+function normalizeContent(content: any): string | null {
+  if (!content) {
+    return null;
+  }
+
+  if (typeof content === 'string') {
+    return content.trim() ? content : null;
+  }
+
+  if (Array.isArray(content)) {
+    const textContent = content
+      .filter(item => item && item.type === 'text' && typeof item.text === 'string')
+      .map(item => item.text)
+      .join('\n')
+      .trim();
+    return textContent || null;
+  }
+
+  if (typeof content === 'object' && typeof content.text === 'string') {
+    return content.text.trim() ? content.text : null;
+  }
+
+  return null;
 }
 
 /**

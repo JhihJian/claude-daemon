@@ -249,7 +249,8 @@ async function showStatus(): Promise<void> {
       log('gray', `  Queue: ${data.queue.queueSize} pending, processing=${data.queue.processing}`);
     }
     if (data.web) {
-      const webStatus = data.web.enabled ? `enabled (port ${data.web.port || 3000})` : 'disabled';
+      const webHost = data.web.host || '127.0.0.1';
+      const webStatus = data.web.enabled ? `enabled (${webHost}:${data.web.port || 3000})` : 'disabled';
       log('gray', `  Web UI: ${webStatus}`);
     }
     if (data.plugins) {

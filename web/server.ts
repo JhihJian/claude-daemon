@@ -6,9 +6,10 @@
  * 使用 Bun 内置 Web 服务器提供 RESTful API 和静态文件服务
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { connect } from 'net';
 import { SessionsAPI } from './api/sessions';
 import { StatsAPI } from './api/stats';
 import { createHookLogger } from '../lib/logger';
@@ -26,6 +27,7 @@ export class WebServer {
   private statsAPI: StatsAPI;
   private server: any;
   private wsClients: Set<any> = new Set();
+  private daemonSocketPath = '/tmp/claude-daemon.sock';
 
   constructor(port: number = 3000, hostname: string = '127.0.0.1') {
     this.port = port;
@@ -160,6 +162,21 @@ export class WebServer {
         };
       }
 
+      if (segments[2] === 'active' && segments[3]) {
+        const activeDetail = await this.requestDaemon('active_session', { sessionId: segments[3] });
+        return {
+          status: activeDetail.success ? 200 : 404,
+          data: activeDetail.success ? activeDetail.data : null,
+        };
+      }
+      if (segments[2] === 'active') {
+        const active = await this.requestDaemon('active_sessions');
+        return {
+          status: active.success ? 200 : 503,
+          data: active.success ? active.data : [],
+        };
+      }
+
       if (segments[2] === 'by-type') {
         const type = url.searchParams.get('type');
         if (!type) {
@@ -193,7 +210,7 @@ export class WebServer {
         };
       }
 
-      if (segments[2] && segments[2] !== 'recent') {
+      if (segments[2] && !['recent', 'active', 'by-type', 'by-directory', 'by-host'].includes(segments[2])) {
         // /api/sessions/{id}
         const sessionId = segments[2];
         return {
@@ -252,6 +269,51 @@ export class WebServer {
       status: 404,
       data: { error: 'API endpoint not found' },
     };
+  }
+
+  private async requestDaemon(command: string, data?: Record<string, unknown>): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!existsSync(this.daemonSocketPath)) {
+      return { success: false, error: 'Daemon socket not found' };
+    }
+
+    return new Promise((resolve) => {
+      const client = connect(this.daemonSocketPath);
+      let buffer = '';
+      let settled = false;
+
+      const finish = (response: { success: boolean; data?: any; error?: string }) => {
+        if (settled) return;
+        settled = true;
+        resolve(response);
+        client.end();
+      };
+
+      client.on('error', (error) => finish({ success: false, error: error.message }));
+      client.on('connect', () => {
+        client.write(JSON.stringify({ command, data }) + '\n');
+      });
+      client.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            finish(parsed);
+            return;
+          } catch (error) {
+            finish({ success: false, error: error instanceof Error ? error.message : 'Failed to parse response' });
+            return;
+          }
+        }
+      });
+      client.on('end', () => {
+        if (!settled) {
+          finish({ success: false, error: 'No response from daemon' });
+        }
+      });
+    });
   }
 
   /**

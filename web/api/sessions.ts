@@ -48,7 +48,7 @@ export class SessionsAPI {
    * 获取最近的会话
    */
   getRecent(limit: number = 10): SessionSummary[] {
-    return this.query.queryRecent({ limit });
+    return this.query.getRecentSessions(limit);
   }
 
   /**

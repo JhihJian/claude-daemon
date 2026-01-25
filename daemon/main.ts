@@ -35,6 +35,7 @@ class ClaudeDaemon {
   private running = false;
   private startTime?: number;
   private webPort?: number;
+  private webHost?: string;
   private webEnabled = false;
 
   constructor() {
@@ -263,11 +264,12 @@ class ClaudeDaemon {
   /**
    * 启动守护进程
    */
-  async start(options?: { enableWebUI?: boolean; webPort?: number }): Promise<void> {
+  async start(options?: { enableWebUI?: boolean; webPort?: number; webHost?: string }): Promise<void> {
     this.running = true;
     this.startTime = Date.now();
     this.webEnabled = Boolean(options?.enableWebUI);
     this.webPort = options?.webPort;
+    this.webHost = options?.webHost;
 
     logger.info('Starting Claude Daemon...');
 
@@ -288,8 +290,10 @@ class ClaudeDaemon {
     // 4. 启动 Web UI（可选）
     if (this.webEnabled) {
       const port = this.webPort || 3000;
+      const host = this.webHost || '127.0.0.1';
       this.webPort = port;
-      this.webServer = new WebServer(port);
+      this.webHost = host;
+      this.webServer = new WebServer(port, host);
       await this.webServer.start();
       logger.info('✓ Web UI started');
     }
@@ -311,7 +315,7 @@ class ClaudeDaemon {
     logger.info('🚀 Claude Daemon started successfully');
     logger.info('   Waiting for hook events...');
     if (this.webServer) {
-      logger.info(`   Web UI: http://127.0.0.1:${this.webPort || 3000}`);
+      logger.info(`   Web UI: http://${this.webHost || '127.0.0.1'}:${this.webPort || 3000}`);
     }
     const plugins = this.pluginManager.listPlugins();
     if (plugins.length > 0) {
@@ -405,6 +409,7 @@ class ClaudeDaemon {
       const health = await this.healthMonitor.check();
       const queueStatus = this.eventQueue.getStatus();
       const plugins = this.pluginManager.listPlugins();
+      const activeSessions = this.analyzer.getActiveSessionsSummary();
       const uptimeSeconds = this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0;
 
       return {
@@ -416,12 +421,33 @@ class ClaudeDaemon {
           web: {
             enabled: this.webEnabled,
             port: this.webPort,
+            host: this.webHost,
           },
           queue: queueStatus,
           plugins,
+          activeSessions,
           health,
         },
       };
+    });
+
+    this.hookServer.registerCommand('active_sessions', async () => {
+      return {
+        success: true,
+        data: this.analyzer.getActiveSessionsSummary(),
+      };
+    });
+
+    this.hookServer.registerCommand('active_session', async (request) => {
+      const sessionId = request?.sessionId;
+      if (!sessionId) {
+        return { success: false, error: 'Missing sessionId' };
+      }
+      const session = this.analyzer.getActiveSessionById(sessionId);
+      if (!session) {
+        return { success: false, error: 'Session not found' };
+      }
+      return { success: true, data: session };
     });
   }
 
@@ -498,6 +524,7 @@ if (import.meta.main) {
   const args = process.argv.slice(2);
   let enableWebUI = false;
   let webPort = 3000;
+  let webHost = '127.0.0.1';
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -510,6 +537,12 @@ if (import.meta.main) {
         webPort = parseInt(portValue);
         i++; // 跳过下一个参数
       }
+    } else if (arg === '--host' || arg === '-H') {
+      const hostValue = args[i + 1];
+      if (hostValue) {
+        webHost = hostValue;
+        i++; // 跳过下一个参数
+      }
     } else if (arg === '--help' || arg === '-h') {
       console.log(`
 Claude Daemon - Background service for Claude Code session recording
@@ -520,11 +553,13 @@ Usage:
 Options:
   --web, -w           Enable Web UI
   --port, -p <port>   Web UI port (default: 3000)
+  --host, -H <host>   Web UI host (default: 127.0.0.1)
   --help, -h          Show this help message
 
 Examples:
   bun daemon/main.ts --web
   bun daemon/main.ts --web --port 8080
+  bun daemon/main.ts --web --host 0.0.0.0
       `);
       process.exit(0);
     }
@@ -532,7 +567,7 @@ Examples:
 
   const daemon = new ClaudeDaemon();
 
-  daemon.start({ enableWebUI, webPort }).catch((error) => {
+  daemon.start({ enableWebUI, webPort, webHost }).catch((error) => {
     console.error('[ClaudeDaemon] Fatal error:', error);
     process.exit(1);
   });

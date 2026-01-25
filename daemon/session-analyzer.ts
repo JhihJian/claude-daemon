@@ -167,6 +167,35 @@ export class SessionAnalyzer {
   }
 
   /**
+   * 构建活跃会话摘要
+   */
+  private buildActiveSummary(session: ActiveSession): SessionSummary {
+    const duration = Math.round((Date.now() - session.start_time) / 1000);
+    const sessionType = this.classifySession(session.tool_events);
+    const toolUsage = this.analyzeToolUsage(session.tool_events);
+    const successRate = this.calculateSuccessRate(session.tool_events);
+    const fileCount = session.files_modified.size;
+
+    return {
+      session_id: session.session_id,
+      timestamp: new Date(session.start_time).toISOString(),
+      working_directory: session.start_data.working_directory || 'unknown',
+      git_repo: session.start_data.git_repo || null,
+      git_branch: session.start_data.git_branch || null,
+      hostname: session.start_data.hostname || 'unknown',
+      user: session.start_data.user || 'unknown',
+      platform: session.start_data.platform || 'unknown',
+      session_type: sessionType,
+      duration_seconds: duration,
+      total_tools: session.tool_events.length,
+      success_rate: successRate,
+      files_modified: Array.from(session.files_modified),
+      tool_usage: toolUsage,
+      summary_text: `Active ${sessionType} session (${session.tool_events.length} tool ops, ${fileCount} file(s) modified)`,
+    };
+  }
+
+  /**
    * 分类会话类型
    */
   private classifySession(toolEvents: ToolEvent[]): SessionType {
@@ -302,6 +331,24 @@ export class SessionAnalyzer {
       duration: Math.round((now - session.start_time) / 1000),
       tools: session.tool_events.length,
     }));
+  }
+
+  /**
+   * 获取活跃会话摘要列表
+   */
+  getActiveSessionsSummary(): SessionSummary[] {
+    return Array.from(this.activeSessions.values()).map(session => this.buildActiveSummary(session));
+  }
+
+  /**
+   * 获取活跃会话详情
+   */
+  getActiveSessionById(sessionId: string): SessionSummary | null {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) {
+      return null;
+    }
+    return this.buildActiveSummary(session);
   }
 }
 
