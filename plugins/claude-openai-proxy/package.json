@@ -1,0 +1,19 @@
+{
+  "name": "claude-openai-proxy",
+  "version": "1.0.0",
+  "description": "OpenAI API compatible proxy for Claude Code",
+  "main": "plugin.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run plugin.ts",
+    "test": "bun test"
+  },
+  "keywords": [
+    "claude",
+    "openai",
+    "proxy",
+    "plugin"
+  ],
+  "author": "Claude Daemon Team",
+  "license": "MIT"
+}

@@ -25,9 +25,12 @@
     "claude-daemon": "./bin/cli.js"
   },
   "files": [
+    "daemon/",
     "hooks/",
     "lib/",
     "tools/",
+    "plugins/",
+    "web/",
     "bin/",
     "install.sh",
     "install.ps1",

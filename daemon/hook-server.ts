@@ -19,14 +19,30 @@ export interface HookEvent {
   data: any;
 }
 
+export interface IPCCommand {
+  command: string;
+  sessionId?: string;
+  data?: any;
+}
+
+export interface IPCResponse {
+  success: boolean;
+  data?: any;
+  error?: string;
+}
+
+export type CommandHandler = (request: IPCCommand) => Promise<IPCResponse>;
+
 export class HookServer {
   private server?: Server;
   private socketPath: string;
   private eventHandlers: Map<string, (event: HookEvent) => Promise<void>>;
+  private commandHandlers: Map<string, CommandHandler>;
 
   constructor(socketPath: string = '/tmp/claude-daemon.sock') {
     this.socketPath = socketPath;
     this.eventHandlers = new Map();
+    this.commandHandlers = new Map();
   }
 
   /**
@@ -34,6 +50,22 @@ export class HookServer {
    */
   on(eventType: string, handler: (event: HookEvent) => Promise<void>): void {
     this.eventHandlers.set(eventType, handler);
+  }
+
+  /**
+   * 注册命令处理器
+   */
+  registerCommand(commandName: string, handler: CommandHandler): void {
+    this.commandHandlers.set(commandName, handler);
+    logger.debug(`Registered command: ${commandName}`);
+  }
+
+  /**
+   * 取消注册命令处理器
+   */
+  unregisterCommand(commandName: string): void {
+    this.commandHandlers.delete(commandName);
+    logger.debug(`Unregistered command: ${commandName}`);
   }
 
   /**
@@ -100,25 +132,15 @@ export class HookServer {
    */
   private async handleMessage(message: string, socket: Socket): Promise<void> {
     try {
-      const event: HookEvent = JSON.parse(message);
+      const parsed = JSON.parse(message);
 
-      logger.debug('Received event', {
-        hookName: event.hook_name,
-        eventType: event.event_type,
-        sessionId: event.session_id,
-      });
-
-      // 查找对应的处理器
-      const handler = this.eventHandlers.get(event.event_type);
-
-      if (handler) {
-        await handler(event);
-
-        // 发送成功响应
-        socket.write(JSON.stringify({ success: true }) + '\n');
+      // 区分 IPC 命令和 Hook 事件
+      if ('command' in parsed) {
+        // 处理 IPC 命令
+        await this.handleCommand(parsed as IPCCommand, socket);
       } else {
-        logger.warn('No handler for event type', { eventType: event.event_type });
-        socket.write(JSON.stringify({ success: false, error: 'No handler' }) + '\n');
+        // 处理 Hook 事件
+        await this.handleEvent(parsed as HookEvent, socket);
       }
     } catch (error) {
       logger.error('Failed to process message', {
@@ -129,6 +151,54 @@ export class HookServer {
       socket.write(JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
+      }) + '\n');
+    }
+  }
+
+  /**
+   * 处理 Hook 事件
+   */
+  private async handleEvent(event: HookEvent, socket: Socket): Promise<void> {
+    logger.debug('Received event', {
+      hookName: event.hook_name,
+      eventType: event.event_type,
+      sessionId: event.session_id,
+    });
+
+    // 查找对应的处理器
+    const handler = this.eventHandlers.get(event.event_type);
+
+    if (handler) {
+      await handler(event);
+
+      // 发送成功响应
+      socket.write(JSON.stringify({ success: true }) + '\n');
+    } else {
+      logger.warn('No handler for event type', { eventType: event.event_type });
+      socket.write(JSON.stringify({ success: false, error: 'No handler' }) + '\n');
+    }
+  }
+
+  /**
+   * 处理 IPC 命令
+   */
+  private async handleCommand(command: IPCCommand, socket: Socket): Promise<void> {
+    logger.debug('Received command', {
+      command: command.command,
+      sessionId: command.sessionId,
+    });
+
+    // 查找对应的命令处理器
+    const handler = this.commandHandlers.get(command.command);
+
+    if (handler) {
+      const response = await handler(command);
+      socket.write(JSON.stringify(response) + '\n');
+    } else {
+      logger.warn('No handler for command', { command: command.command });
+      socket.write(JSON.stringify({
+        success: false,
+        error: `Unknown command: ${command.command}`
       }) + '\n');
     }
   }
