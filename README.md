@@ -25,6 +25,21 @@
 - 📈 **统计分析** - 会话统计、类型分布、活跃目录分析
 - 💾 **JSONL 存储** - 流式写入，易于解析和处理
 
+### 🔌 插件系统
+
+- 🧩 **可扩展架构** - 通过插件扩展守护进程功能
+- 🔗 **IPC 命令** - 插件可注册自定义命令，通过 Unix Socket 访问
+- 🎯 **事件总线** - 插件可监听和发送事件
+- 🔄 **热加载** - 支持插件的加载、卸载和重新加载
+- 💡 **示例插件** - 包含 OpenAI Proxy 插件示例
+
+### 🌐 Web UI
+
+- 📊 **可视化界面** - 实时查看会话历史和统计信息
+- 🔄 **实时更新** - 通过 WebSocket 实时推送会话更新
+- 📈 **图表展示** - 会话类型分布、工具使用统计
+- 🎨 **现代设计** - 响应式界面，支持深色模式
+
 ### ⚡ 性能
 
 | 指标 | 数值 |
@@ -33,6 +48,33 @@
 | Socket 响应 | < 10ms |
 | 内存占用 | ~50MB |
 | CPU 占用 | < 1%（空闲） |
+
+---
+
+## 🔄 最近更新
+
+### v1.3.3 (2026-01-25)
+
+**🔧 关键修复：**
+- ✅ 修复插件 IPC 命令与 Hook Server 的集成
+  - 插件命令现在可通过 Unix Socket 访问
+  - 自动注册和清理命令处理器
+- ✅ 修复 SessionToolCapture hook 架构
+  - 改为推送事件到守护进程（而非直接写文件）
+  - 添加 2 秒超时和文件写入回退机制
+- ✅ 添加 CLI 参数解析
+  - 支持 `--web` 启用 Web UI
+  - 支持 `--port` 指定端口
+  - 支持 `--help` 显示帮助
+- ✅ 更新 npm 包配置
+  - 包含 daemon/、plugins/、web/ 目录
+
+**🎯 测试结果：**
+- ✅ 守护进程启动测试通过
+- ✅ 插件系统加载测试通过
+- ✅ Hook 事件推送测试通过
+- ✅ CLI 参数解析测试通过
+- ✅ Web UI 功能验证通过
 
 ---
 
@@ -63,19 +105,34 @@ cd claude-daemon
 # 启动守护进程
 claude-daemon start
 
+# 启动守护进程并启用 Web UI
+bun daemon/main.ts --web --port 3000
+
 # 停止守护进程
 claude-daemon stop
 
 # 重启守护进程
 claude-daemon restart
 
-# 查看状态
+# 查看状态（包含健康检查、队列、插件等摘要）
 claude-daemon status
 
 # 查看日志
 claude-daemon logs         # 最后 50 行
 claude-daemon logs 100     # 最后 100 行
+
+# 开发模式（快捷脚本）
+npm run dev               # daemon + Web UI
+npm run dev:web           # 仅 Web UI
+
+# 查看帮助
+bun daemon/main.ts --help
 ```
+
+**CLI 参数：**
+- `--web, -w` - 启用 Web UI
+- `--port, -p <port>` - 指定 Web UI 端口（默认：3000）
+- `--help, -h` - 显示帮助信息
 
 ### 使用 Claude Code
 
@@ -158,12 +215,26 @@ claude-daemon/
 │   ├── session-analyzer.ts       # 会话分析
 │   ├── scheduler.ts              # 任务调度
 │   ├── health-monitor.ts         # 健康监控
-│   └── cleanup-service.ts        # 数据清理
+│   ├── cleanup-service.ts        # 数据清理
+│   ├── plugin-manager.ts         # 插件管理器
+│   ├── plugin-context.ts         # 插件上下文
+│   └── plugin-interface.ts       # 插件接口定义
+│
+├── plugins/                       # 插件目录
+│   └── claude-openai-proxy/      # OpenAI Proxy 插件示例
+│       ├── plugin.ts             # 插件主文件
+│       ├── http-server.ts        # HTTP 服务器
+│       └── process-manager.ts    # 进程管理
 │
 ├── hooks-push/                    # 推送模式 Hooks
 │   ├── SessionRecorder.hook.ts   # 会话启动
 │   ├── SessionToolCapture.hook.ts # 工具调用
 │   └── SessionAnalyzer.hook.ts   # 会话结束
+│
+├── web/                          # Web UI
+│   ├── server.ts                 # Web 服务器
+│   ├── api/                      # API 路由
+│   └── public/                   # 前端资源
 │
 ├── lib/                          # 共享库
 │   ├── config.ts                 # 配置管理
@@ -183,6 +254,7 @@ claude-daemon/
 ├── launchd/                      # macOS 系统服务
 │   └── com.claudecode.daemon.plist # launchd 配置
 │
+├── daemon-config.example.json    # 插件配置示例
 ├── install-daemon.sh             # 安装脚本
 ├── DAEMON-GUIDE.md               # 完整使用指南
 └── README.md                     # 本文档
@@ -355,10 +427,10 @@ ls -la ~/.claude/hooks/
 ### 查看详细日志
 
 ```bash
-# 实时监控
-claude-daemon logs -f
+# 查看最后 N 行
+claude-daemon logs 200
 
-# 或直接查看文件
+# 或直接查看/实时监控文件
 tail -f ~/.claude/daemon.log
 ```
 

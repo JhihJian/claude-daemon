@@ -8,7 +8,6 @@ import { connect } from 'net';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import { spawn } from 'child_process';
 
 const DAEMON_SOCKET = '/tmp/claude-daemon.sock';
 const PID_FILE = join(homedir(), '.claude/daemon.pid');
@@ -25,6 +24,58 @@ const COLORS = {
 
 function log(color: keyof typeof COLORS, message: string) {
   console.log(`${COLORS[color]}${message}${COLORS.reset}`);
+}
+
+function formatDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map(value => String(value).padStart(2, '0')).join(':');
+}
+
+async function sendCommand(command: string, data?: Record<string, unknown>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const client = connect(DAEMON_SOCKET);
+    let buffer = '';
+    let settled = false;
+
+    const finish = (error?: Error, response?: any) => {
+      if (settled) return;
+      settled = true;
+      if (error) {
+        reject(error);
+      } else {
+        resolve(response);
+      }
+      client.end();
+    };
+
+    client.on('error', (error) => finish(error));
+    client.on('connect', () => {
+      client.write(JSON.stringify({ command, data }) + '\n');
+    });
+    client.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          finish(undefined, parsed);
+          return;
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error('Failed to parse response'));
+          return;
+        }
+      }
+    });
+    client.on('end', () => {
+      if (!settled) {
+        finish(new Error('No response from daemon'));
+      }
+    });
+  });
 }
 
 /**
@@ -183,8 +234,40 @@ async function showStatus(): Promise<void> {
   log('gray', `  PID file: ${PID_FILE}`);
   log('gray', `  Log file: ${LOG_FILE}`);
 
-  // 尝试连接并获取详细状态
-  // TODO: 实现通过 socket 获取详细状态
+  try {
+    const response = await sendCommand('status');
+    if (!response?.success) {
+      log('yellow', `  Status: ${response?.error || 'Unknown error'}`);
+      return;
+    }
+
+    const data = response.data || {};
+    if (data.uptimeSeconds !== undefined) {
+      log('gray', `  Uptime: ${formatDuration(Number(data.uptimeSeconds) || 0)}`);
+    }
+    if (data.queue) {
+      log('gray', `  Queue: ${data.queue.queueSize} pending, processing=${data.queue.processing}`);
+    }
+    if (data.web) {
+      const webStatus = data.web.enabled ? `enabled (port ${data.web.port || 3000})` : 'disabled';
+      log('gray', `  Web UI: ${webStatus}`);
+    }
+    if (data.plugins) {
+      const pluginList = Array.isArray(data.plugins)
+        ? data.plugins.map((plugin: any) => `${plugin.name}(${plugin.status})`).join(', ')
+        : '';
+      log('gray', `  Plugins: ${pluginList || 'none'}`);
+    }
+    if (data.health) {
+      const healthStatus = data.health.healthy ? 'healthy' : 'issues detected';
+      log('gray', `  Health: ${healthStatus}`);
+      if (!data.health.healthy && Array.isArray(data.health.issues)) {
+        data.health.issues.forEach((issue: string) => log('yellow', `    - ${issue}`));
+      }
+    }
+  } catch (error) {
+    log('yellow', `  Status: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**
@@ -196,17 +279,14 @@ async function showLogs(lines: number = 50): Promise<void> {
     return;
   }
 
-  // 使用 tail 显示最后 N 行
-  const { spawn } = require('child_process');
-  const tail = spawn('tail', ['-n', String(lines), LOG_FILE]);
-
-  tail.stdout.on('data', (data: Buffer) => {
-    process.stdout.write(data);
-  });
-
-  await new Promise(resolve => {
-    tail.on('close', resolve);
-  });
+  const content = readFileSync(LOG_FILE, 'utf-8');
+  const allLines = content.trimEnd().split(/\r?\n/);
+  const tailLines = allLines.slice(-lines);
+  if (tailLines.length === 0) {
+    log('yellow', '✗ Log file is empty');
+    return;
+  }
+  tailLines.forEach(line => console.log(line));
 }
 
 /**

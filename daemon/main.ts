@@ -33,6 +33,9 @@ class ClaudeDaemon {
   private eventBus: EventEmitter;
   private webServer?: WebServer;
   private running = false;
+  private startTime?: number;
+  private webPort?: number;
+  private webEnabled = false;
 
   constructor() {
     // 初始化事件总线
@@ -59,6 +62,9 @@ class ClaudeDaemon {
 
     // 设置定时任务
     this.setupScheduledTasks();
+
+    // 注册 IPC 命令
+    this.setupIPCCommands();
   }
 
   /**
@@ -259,6 +265,9 @@ class ClaudeDaemon {
    */
   async start(options?: { enableWebUI?: boolean; webPort?: number }): Promise<void> {
     this.running = true;
+    this.startTime = Date.now();
+    this.webEnabled = Boolean(options?.enableWebUI);
+    this.webPort = options?.webPort;
 
     logger.info('Starting Claude Daemon...');
 
@@ -277,8 +286,9 @@ class ClaudeDaemon {
     this.setupPluginCommandHandlers();
 
     // 4. 启动 Web UI（可选）
-    if (options?.enableWebUI) {
-      const port = options?.webPort || 3000;
+    if (this.webEnabled) {
+      const port = this.webPort || 3000;
+      this.webPort = port;
       this.webServer = new WebServer(port);
       await this.webServer.start();
       logger.info('✓ Web UI started');
@@ -301,7 +311,7 @@ class ClaudeDaemon {
     logger.info('🚀 Claude Daemon started successfully');
     logger.info('   Waiting for hook events...');
     if (this.webServer) {
-      logger.info(`   Web UI: http://127.0.0.1:${options?.webPort || 3000}`);
+      logger.info(`   Web UI: http://127.0.0.1:${this.webPort || 3000}`);
     }
     const plugins = this.pluginManager.listPlugins();
     if (plugins.length > 0) {
@@ -385,6 +395,34 @@ class ClaudeDaemon {
     // 插件命令已在 PluginContext.registerIPCCommand() 中自动注册到 HookServer
     // 这里只需要记录日志
     logger.info('✓ Plugin command handlers connected');
+  }
+
+  /**
+   * 注册内置 IPC 命令
+   */
+  private setupIPCCommands(): void {
+    this.hookServer.registerCommand('status', async () => {
+      const health = await this.healthMonitor.check();
+      const queueStatus = this.eventQueue.getStatus();
+      const plugins = this.pluginManager.listPlugins();
+      const uptimeSeconds = this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0;
+
+      return {
+        success: true,
+        data: {
+          pid: process.pid,
+          running: this.running,
+          uptimeSeconds,
+          web: {
+            enabled: this.webEnabled,
+            port: this.webPort,
+          },
+          queue: queueStatus,
+          plugins,
+          health,
+        },
+      };
+    });
   }
 
   /**
