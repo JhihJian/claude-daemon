@@ -1,4 +1,4 @@
-# Claude Code 会话历史系统 - Windows 安装脚本
+﻿# Claude Code 会话历史系统 - Windows 安装脚本
 # 简化版，解决编码问题
 
 param(
@@ -95,7 +95,7 @@ $Settings = @{
                 hooks = @(
                     @{
                         type = "command"
-                        command = "$ClaudeDir\hooks\SessionRecorder.hook.ts"
+                        command = "bun $ClaudeDir\hooks\SessionRecorder.hook.ts"
                     }
                 )
             }
@@ -105,7 +105,7 @@ $Settings = @{
                 hooks = @(
                     @{
                         type = "command"
-                        command = "$ClaudeDir\hooks\SessionToolCapture-v2.hook.ts"
+                        command = "bun $ClaudeDir\hooks\SessionToolCapture-v2.hook.ts"
                     }
                 )
             }
@@ -115,7 +115,7 @@ $Settings = @{
                 hooks = @(
                     @{
                         type = "command"
-                        command = "$ClaudeDir\hooks\SessionAnalyzer.hook.ts"
+                        command = "bun $ClaudeDir\hooks\SessionAnalyzer.hook.ts"
                     }
                 )
             }

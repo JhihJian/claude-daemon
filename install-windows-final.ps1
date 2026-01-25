@@ -1,4 +1,4 @@
-# Claude Code 会话历史系统 - Windows 安装脚本
+﻿# Claude Code 会话历史系统 - Windows 安装脚本
 # 版本 3 - 修复工具路径持久化问题
 
 param(
@@ -160,7 +160,11 @@ $HookRecorderJson = $HookRecorder.Replace('\', '\\')
 $HookCaptureJson = $HookCapture.Replace('\', '\\')
 $HookAnalyzerJson = $HookAnalyzer.Replace('\', '\\')
 
+# 转换 Bun 路径为 JSON 格式
+$BunPathJson = $BunPath.Replace('\', '\\')
+
 # 直接构建 JSON 字符串
+# Windows 需要显式调用 bun 来执行 .ts 文件
 $SettingsJson = @"
 {
   "model": "opus",
@@ -170,7 +174,7 @@ $SettingsJson = @"
         "hooks": [
           {
             "type": "command",
-            "command": "$HookRecorderJson"
+            "command": "bun $HookRecorderJson"
           }
         ]
       }
@@ -180,7 +184,7 @@ $SettingsJson = @"
         "hooks": [
           {
             "type": "command",
-            "command": "$HookCaptureJson"
+            "command": "bun $HookCaptureJson"
           }
         ]
       }
@@ -190,7 +194,7 @@ $SettingsJson = @"
         "hooks": [
           {
             "type": "command",
-            "command": "$HookAnalyzerJson"
+            "command": "bun $HookAnalyzerJson"
           }
         ]
       }

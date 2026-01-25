@@ -1,4 +1,4 @@
-# Claude Code 会话历史系统 - Windows PowerShell 安装脚本
+﻿# Claude Code 会话历史系统 - Windows PowerShell 安装脚本
 # 版本: 1.0
 
 param(
@@ -101,7 +101,7 @@ $Settings = @{
                 hooks = @(
                     @{
                         type = "command"
-                        command = "$HooksPath\\SessionRecorder.hook.ts"
+                        command = "bun $HooksPath\\SessionRecorder.hook.ts"
                     }
                 )
             }
@@ -111,7 +111,7 @@ $Settings = @{
                 hooks = @(
                     @{
                         type = "command"
-                        command = "$HooksPath\\SessionToolCapture-v2.hook.ts"
+                        command = "bun $HooksPath\\SessionToolCapture-v2.hook.ts"
                     }
                 )
             }
@@ -121,7 +121,7 @@ $Settings = @{
                 hooks = @(
                     @{
                         type = "command"
-                        command = "$HooksPath\\SessionAnalyzer.hook.ts"
+                        command = "bun $HooksPath\\SessionAnalyzer.hook.ts"
                     }
                 )
             }

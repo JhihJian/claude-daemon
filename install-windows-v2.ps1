@@ -1,4 +1,4 @@
-# Claude Code 会话历史系统 - Windows 安装脚本
+﻿# Claude Code 会话历史系统 - Windows 安装脚本
 # 完全重写，确保可靠性
 
 param(
@@ -121,6 +121,7 @@ $HookCaptureJson = $HookCapture.Replace('\', '\\')
 $HookAnalyzerJson = $HookAnalyzer.Replace('\', '\\')
 
 # 直接构建 JSON 字符串（避免 PowerShell 对象转换问题）
+# Windows 需要显式调用 bun 来执行 .ts 文件
 $SettingsJson = @"
 {
   "model": "opus",
@@ -130,7 +131,7 @@ $SettingsJson = @"
         "hooks": [
           {
             "type": "command",
-            "command": "$HookRecorderJson"
+            "command": "bun $HookRecorderJson"
           }
         ]
       }
@@ -140,7 +141,7 @@ $SettingsJson = @"
         "hooks": [
           {
             "type": "command",
-            "command": "$HookCaptureJson"
+            "command": "bun $HookCaptureJson"
           }
         ]
       }
@@ -150,7 +151,7 @@ $SettingsJson = @"
         "hooks": [
           {
             "type": "command",
-            "command": "$HookAnalyzerJson"
+            "command": "bun $HookAnalyzerJson"
           }
         ]
       }

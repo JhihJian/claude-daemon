@@ -1,4 +1,4 @@
-# Claude 会话历史 - Git 仓库初始化脚本 (PowerShell)
+﻿# Claude 会话历史 - Git 仓库初始化脚本 (PowerShell)
 # 版本: 1.0
 
 Write-Host "======================================" -ForegroundColor Green
