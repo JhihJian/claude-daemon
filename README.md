@@ -5,49 +5,172 @@
 [![GitHub](https://img.shields.io/badge/GitHub-claude--daemon-blue?logo=github)](https://github.com/JhihJian/claude-daemon)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black?logo=bun)](https://bun.sh)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Test](https://img.shields.io/badge/Tests-12%2F12%20Passed-success)](FINAL-TEST-REPORT.md)
+[![Test](https://img.shields.io/badge/Tests-51%2F53%20Passed-success)](docs/testing-reports/COMPREHENSIVE-TESTING-COMPLETE.md)
 
-## ✨ 特性
+## 🌟 特性亮点
 
-### 🎯 守护线程架构
-
-- ✅ **常驻后台服务** - 持续运行，实时响应
+### 🎯 守护进程架构
+- ✅ **常驻后台服务** - 持续运行，实时响应，零配置
+- ✅ **跨平台支持** - Linux/macOS/Windows 全平台支持
+- ✅ **智能 IPC** - Unix Socket (Linux/macOS) / TCP Socket (Windows)
 - ✅ **主动维护** - 定期健康检查、自动清理、索引优化
-- ✅ **实时监控** - 即时告警、异常检测、性能追踪
-- ✅ **统一调度** - 并发安全、事件队列、智能重试
-- ✅ **系统集成** - systemd/launchd 管理、开机自启
+- ✅ **系统集成** - systemd/launchd/Task Scheduler 管理
 
 ### 📦 核心功能
-
-- 🔍 **自动记录** - 捕获每个会话的启动目录、Git 信息、工具调用
-- 🏷️ **智能分类** - 自动识别会话类型（编码、调试、研究、写作、Git 操作等）
-- 📊 **多维索引** - 按类型、按目录、按主机名、按时间快速查询
+- 🔍 **自动记录** - 捕获会话的所有细节（目录、Git 信息、工具调用）
+- 🏷️ **智能分类** - 7 种会话类型自动识别（coding, debugging, research 等）
+- 📊 **多维索引** - 按类型、目录、主机名、时间快速查询
 - 📈 **统计分析** - 会话统计、类型分布、活跃目录分析
-- 💾 **JSONL 存储** - 流式写入，易于解析和处理
+- 💾 **高效存储** - JSONL 流式写入 + JSON 摘要
 
 ### 🔌 插件系统
-
-- 🧩 **可扩展架构** - 通过插件扩展守护进程功能
-- 🔗 **IPC 命令** - 插件可注册自定义命令，通过 Unix Socket 访问
+- 🧩 **可扩展架构** - 动态加载/卸载插件
+- 🔗 **IPC 命令** - 插件可注册自定义命令
 - 🎯 **事件总线** - 插件可监听和发送事件
-- 🔄 **热加载** - 支持插件的加载、卸载和重新加载
-- 💡 **示例插件** - 包含 OpenAI Proxy 插件示例
+- 💡 **示例插件** - OpenAI Proxy 插件示例
+
+### 🤖 多 Agent 协作
+- 👥 **Master-Worker 模式** - 协调多个 Claude Code 实例
+- 💬 **消息系统** - Agent 间异步通信
+- 📋 **任务编排** - 任务分解、分配、结果聚合
+- 🔄 **状态同步** - 实时状态跟踪和心跳检测
 
 ### 🌐 Web UI
+- 📊 **可视化界面** - 实时查看会话历史和统计
+- 🔄 **实时更新** - WebSocket 推送新会话
+- 📈 **图表展示** - 类型分布、工具使用统计
+- 🎨 **现代设计** - 响应式界面
 
-- 📊 **可视化界面** - 实时查看会话历史和统计信息
-- 🔄 **实时更新** - 通过 WebSocket 实时推送会话更新
-- 📈 **图表展示** - 会话类型分布、工具使用统计
-- 🎨 **现代设计** - 响应式界面，支持深色模式
-
-### ⚡ 性能
-
+### ⚡ 性能指标
 | 指标 | 数值 |
 |------|------|
-| 启动时间 | < 1秒 |
-| Socket 响应 | < 10ms |
+| Hook 执行 | < 100ms |
+| API 响应 | < 50ms |
 | 内存占用 | ~50MB |
 | CPU 占用 | < 1%（空闲） |
+
+---
+
+## 📋 核心功能模块
+
+核心功能模块
+
+  1. 守护进程系统 (daemon/main.ts)
+
+  - Hook Server: 通过 IPC 接收事件（Linux/macOS 用 Unix Socket，Windows 用 TCP Socket）
+  - 事件队列: 顺序处理事件，防止并发冲突
+  - 存储服务: 持久化原始事件（JSONL）和会话摘要（JSON）
+  - 会话分析器: 实时分类和分析会话
+  - 调度器: 定时任务（健康检查、数据清理、会话监控）
+  - 健康监控: 系统健康状态检查
+  - 清理服务: 自动清理旧数据
+  - 插件管理器: 动态加载/卸载插件
+  - Web UI: 可选的 Web 界面
+
+  2. 插件系统 (daemon/plugin-manager.ts)
+
+  - 动态加载/卸载插件
+  - 插件生命周期管理（onLoad, onUnload, healthCheck）
+  - IPC 命令注册
+  - 插件配置管理
+  - 内置插件示例:
+    - claude-openai-proxy: 提供 OpenAI API 兼容的代理服务
+
+  3. 多 Agent 协作系统 ⭐ 核心特性
+
+  - Agent 注册表 (daemon/agent-registry.ts):
+    - 管理 master 和 worker agents
+    - 状态跟踪: idle, busy, waiting, completed, failed, disconnected
+    - 心跳机制检测失联 agent（5分钟超时）
+    - 自动清理超时 agent
+  - 消息代理 (daemon/message-broker.ts):
+    - Agent 间消息路由
+    - 消息队列和持久化
+    - 支持点对点和广播消息
+    - 消息状态: pending, delivered, read
+    - 自动清理 24 小时前的消息
+
+  4. Hook 系统 (hooks-push/)
+
+  - SessionRecorder.hook.ts: 记录会话启动
+  - SessionToolCapture.hook.ts: 捕获工具使用
+  - SessionAnalyzer.hook.ts: 触发会话分析
+  - AgentMessaging.hook.ts: 检查新消息并注入到 Agent 上下文 ⭐
+  - AgentStatus.hook.ts: 更新 Agent 状态
+  - TaskCompletion.hook.ts: 报告任务完成
+
+  5. 会话分析 (daemon/session-analyzer.ts)
+
+  - 自动分类:
+    - coding: 编码（Edit/Write > 40%）
+    - debugging: 调试（有测试命令 + Read > Edit）
+    - research: 研究（Grep/Glob > 30%）
+    - writing: 写作（Markdown 编辑 > 50%）
+    - git: Git 操作（Git 命令 > 50%）
+    - refactoring: 重构
+    - mixed: 混合类型
+  - 统计数据:
+    - 工具使用频率
+    - 成功率
+    - 修改的文件列表
+    - 会话时长
+    - Git 仓库和分支信息
+
+  6. Web UI (web/server.ts)
+
+  - RESTful API:
+    - /api/sessions/recent - 最近会话
+    - /api/sessions/active - 活跃会话 ⭐
+    - /api/sessions/by-type - 按类型筛选
+    - /api/sessions/by-directory - 按目录筛选
+    - /api/sessions/{id} - 单个会话详情
+    - /api/stats/* - 统计数据
+  - WebSocket: 实时推送新会话更新
+  - 静态文件服务: 提供前端界面
+
+  7. 任务编排技能 (skills/task-orchestration/) ⭐ 高级特性
+
+  - Master-Worker 协作模式:
+    - Master Agent 协调多个 Worker Agents
+    - 通过 Daemon 的消息系统通信
+  - 执行模式:
+    - 并行独立模式: 多个 agent 执行相同任务，获取不同视角
+    - 分布式任务模式: 将大任务分解为子任务，分配给不同 agent
+  - 功能:
+    - 任务分解和分配
+    - 结果收集和聚合
+    - 共识分析
+    - 进度跟踪
+
+  8. 数据存储 (daemon/storage-service.ts)
+
+  - 原始事件: ~/.claude/SESSIONS/raw/YYYY-MM/session-{id}.jsonl
+  - 会话摘要: ~/.claude/SESSIONS/analysis/summaries/YYYY-MM/summary-{id}.json
+  - 索引:
+    - 按类型: by-type/{type}/sessions.json
+    - 按目录: by-directory/{hash}/sessions.json
+    - 按主机: by-host/{hostname}/sessions.json
+  - 全局元数据: 统计信息
+
+  9. 命令行工具 (tools/, bin/)
+
+  - SessionQuery.ts: 查询会话
+  - SessionStats.ts: 统计信息
+  - claude-daemon: CLI 入口
+
+  10. 跨平台支持
+
+  - Linux/macOS: Unix Domain Socket (/tmp/claude-daemon.sock)
+  - Windows: TCP Socket (127.0.0.1:39281)
+  - 自动检测平台并选择合适的 IPC 机制
+
+  关键创新点
+
+  1. 多 Agent 协作架构: 支持 Master-Worker 模式，可以协调多个 Claude Code 实例协同工作
+  2. 消息系统: Agent 间可以通过消息队列通信，实现异步协作
+  3. 插件扩展: 开放的插件系统，可以扩展守护进程功能
+  4. 实时注入: AgentMessaging hook 可以在工具调用后将消息注入到 Agent 上下文中
+  5. 任务编排: 高级的任务分解和分配能力
 
 ---
 
@@ -55,7 +178,7 @@
 
 ### v1.3.4 (2026-01-31)
 
-**🎯 全面测试与修复：**
+**🎯 全面测试与跨平台支持：**
 - ✅ **Windows 平台完整支持** - 实现 TCP Socket IPC (127.0.0.1:39281)
   - 解决 Bun v1.3.5 Windows 命名管道崩溃问题
   - 使用 TCP Socket 作为替代方案，性能影响可忽略 (<0.2ms)
@@ -66,18 +189,29 @@
   - 消除 "SessionStart:startup hook error" 错误
 - ✅ **API 端点修复** - 修复 `/api/sessions/recent` 方法名不匹配
 - ✅ **端口配置统一** - Web UI 默认端口更新为 3001
-- ✅ **代码仓库清理** - 移除临时文件和无效文件
+- ✅ **文档重组** - 将所有文档整理到 `docs/` 目录
+  - 架构文档 (`docs/architecture/`)
+  - 用户指南 (`docs/guides/`)
+  - 测试报告 (`docs/testing-reports/`)
+  - 功能文档 (`docs/features/`)
+  - 发布文档 (`docs/release/`)
 
 **📊 测试覆盖：**
 - ✅ 静态分析：9 个问题识别并记录
 - ✅ 组件测试：22/22 通过 (100%)
 - ✅ 集成测试：7/7 API 端点正常 (100%)
+- ✅ 端到端测试：15/15 通过 (100%)
 - ✅ Windows IPC：TCP Socket 通信验证通过
+- **总计：51/53 通过 (96%)**
 
 **📚 文档更新：**
 - 新增 Windows 平台 IPC 机制说明
 - 新增 Windows 特定故障排查指南
 - 更新配置文档和环境变量说明
+- 重组文档结构，提升可维护性
+- 新增文档索引 (`docs/README.md`)
+
+详见 [CHANGELOG.md](CHANGELOG.md)
 
 ### v1.3.3 (2026-01-25)
 
@@ -106,53 +240,100 @@
 
 ## 🚀 快速开始
 
-### 一键安装
+### 方式一：NPM 安装（推荐）
 
+```bash
+# 通过 npx 直接安装
+npx @jhihjian/claude-daemon install
+
+# 或者全局安装
+npm install -g @jhihjian/claude-daemon
+claude-daemon install
+```
+
+### 方式二：从源码安装
+
+**Linux/macOS:**
 ```bash
 # 克隆仓库
 git clone https://github.com/JhihJian/claude-daemon.git
 cd claude-daemon
 
 # 运行安装脚本
-./install-daemon.sh
+./install.sh
+```
+
+**Windows:**
+```powershell
+# 克隆仓库
+git clone https://github.com/JhihJian/claude-daemon.git
+cd claude-daemon
+
+# 运行安装脚本（以管理员身份）
+powershell -ExecutionPolicy Bypass -File install-windows-final.ps1
 ```
 
 安装脚本会自动：
 - ✅ 安装 Bun 运行时（如果未安装）
-- ✅ 创建目录结构
+- ✅ 创建目录结构 (`~/.claude/`)
 - ✅ 配置守护进程服务
 - ✅ 安装推送模式 Hooks
-- ✅ 设置系统服务（systemd/launchd）
+- ✅ 设置系统服务（systemd/launchd/Task Scheduler）
 - ✅ 启动守护进程
 
 ### 管理守护进程
 
+**开发模式（推荐）:**
 ```bash
-# 启动守护进程
-claude-daemon start
+# 启动守护进程 + Web UI
+npm run dev
 
-# 启动守护进程并启用 Web UI
-bun daemon/main.ts --web --port 3000
+# 仅启动 Web UI
+npm run dev:web
 
-# 停止守护进程
-claude-daemon stop
+# 手动启动（带参数）
+bun daemon/main.ts --web --port 3001
+```
 
-# 重启守护进程
-claude-daemon restart
+**生产模式（系统服务）:**
 
-# 查看状态（包含健康检查、队列、插件等摘要）
-claude-daemon status
+Linux (systemd):
+```bash
+# 启动服务
+sudo systemctl start claude-daemon@$USER
+
+# 停止服务
+sudo systemctl stop claude-daemon@$USER
+
+# 查看状态
+sudo systemctl status claude-daemon@$USER
 
 # 查看日志
-claude-daemon logs         # 最后 50 行
-claude-daemon logs 100     # 最后 100 行
+journalctl -u claude-daemon@$USER -f
+```
 
-# 开发模式（快捷脚本）
-npm run dev               # daemon + Web UI
-npm run dev:web           # 仅 Web UI
+macOS (launchd):
+```bash
+# 启动服务
+launchctl start com.claudecode.daemon
 
-# 查看帮助
-bun daemon/main.ts --help
+# 停止服务
+launchctl stop com.claudecode.daemon
+
+# 查看日志
+tail -f ~/.claude/daemon.log
+```
+
+Windows (Task Scheduler):
+```powershell
+# 启动任务
+Start-ScheduledTask -TaskName "Claude Daemon"
+
+# 停止任务（终止进程）
+Stop-Process -Name "bun" -Force
+
+# 查看日志
+Get-Content -Tail 50 -Wait $env:USERPROFILE\.claude\daemon.log
 ```
 
 **CLI 参数：**
@@ -162,47 +343,92 @@ bun daemon/main.ts --help
 
 ### 使用 Claude Code
 
-正常使用 Claude Code，守护进程会自动记录所有会话：
+安装完成后，正常使用 Claude Code，守护进程会在后台自动记录所有会话：
 
 ```bash
+# 启动 Claude Code
+claude
+
+# 或使用管道模式
 echo "请帮我分析这个项目" | claude -p
+
+# 所有会话都会被自动记录，无需任何额外操作
 ```
+
+**自动记录的信息：**
+- 📝 会话开始/结束时间
+- 🛠️ 使用的工具（Read, Edit, Write, Bash 等）
+- 📁 修改的文件列表
+- 🌿 Git 仓库和分支信息
+- 📊 工具使用统计和成功率
+- 🏷️ 自动分类（coding, debugging, research 等）
 
 ### 查询会话历史
 
+**通过 Web UI（推荐）:**
+```
+访问 http://127.0.0.1:3001
+```
+
+**通过 API:**
 ```bash
 # 查看最近的会话
-claude-sessions recent 10
+curl http://127.0.0.1:3001/api/sessions/recent?limit=10
 
 # 查询特定类型
-claude-sessions type coding
+curl http://127.0.0.1:3001/api/sessions/by-type?type=coding
 
 # 查询特定目录
-claude-sessions dir /path/to/project
+curl http://127.0.0.1:3001/api/sessions/by-directory?directory=/path/to/project
 
 # 查看统计信息
-claude-sessions stats
+curl http://127.0.0.1:3001/api/stats/global
+```
+
+**通过命令行工具:**
+```bash
+# 查询最近会话
+bun tools/SessionQuery.ts recent 10
+
+# 按类型查询
+bun tools/SessionQuery.ts type coding
+
+# 按目录查询
+bun tools/SessionQuery.ts dir /path/to/project
+
+# 查看统计
+bun tools/SessionStats.ts
 ```
 
 ---
 
 ## 📐 系统架构
 
+### 数据流
+
 ```
 ┌─────────────────────────────────────────┐
 │         Claude Code (用户使用)           │
 └────────────┬────────────────────────────┘
-             │ 触发 Hooks
+             │ 触发 Hooks (会话生命周期事件)
              ▼
 ┌─────────────────────────────────────────┐
 │          Hooks (轻量推送)                │
 │  - SessionRecorder.hook.ts              │
 │  - SessionToolCapture.hook.ts           │
 │  - SessionAnalyzer.hook.ts              │
+│  - AgentStatus.hook.ts                  │
+│  - AgentMessaging.hook.ts               │
+│  - TaskCompletion.hook.ts               │
 └────────────┬────────────────────────────┘
-             │ 推送数据
-             │ Linux/macOS: Unix Socket (/tmp/claude-daemon.sock)
-             │ Windows: TCP Socket (127.0.0.1:39281)
+             │ 推送数据 (IPC)
+             │
+             │ ┌─ Linux/macOS: Unix Socket
+             │ │  /tmp/claude-daemon.sock
+             │ │
+             │ └─ Windows: TCP Socket
+             │    127.0.0.1:39281
+             │
              ▼
 ┌─────────────────────────────────────────┐
 │      Claude Daemon (常驻进程)            │
@@ -215,10 +441,15 @@ claude-sessions stats
 │       ↓                                  │
 │  [Storage Service] ← 统一存储            │
 │                                          │
+│  [Plugin Manager] ← 插件系统             │
+│  [Agent Registry] ← Agent 管理           │
+│  [Message Broker] ← 消息路由             │
 │  [Scheduler] ← 定时任务                  │
-│  - 健康检查 (5分钟)                      │
-│  - 数据清理 (每天)                       │
-│  - 会话监控 (1分钟)                      │
+│    - 健康检查 (5分钟)                    │
+│    - 数据清理 (每天)                     │
+│    - 会话监控 (1分钟)                    │
+│                                          │
+│  [Web UI Server] ← HTTP + WebSocket     │
 └─────────────────────────────────────────┘
              ↓
 ┌─────────────────────────────────────────┐
@@ -229,6 +460,18 @@ claude-sessions stats
 └─────────────────────────────────────────┘
 ```
 
+### 核心组件
+
+1. **Hook Server** - IPC 通信层，跨平台支持
+2. **Event Queue** - 顺序处理，防止竞态条件
+3. **Session Analyzer** - 实时分类和统计
+4. **Storage Service** - 统一的数据持久化
+5. **Plugin Manager** - 动态插件加载
+6. **Agent Registry** - 多 Agent 协作管理
+7. **Message Broker** - Agent 间消息路由
+8. **Scheduler** - 定时任务调度
+9. **Web UI** - 可视化界面和 API
+
 ---
 
 ## 📂 项目结构
@@ -237,7 +480,7 @@ claude-sessions stats
 claude-daemon/
 ├── daemon/                        # 守护进程核心
 │   ├── main.ts                   # 主入口
-│   ├── hook-server.ts            # IPC 服务器
+│   ├── hook-server.ts            # IPC 服务器（Unix Socket/TCP）
 │   ├── event-queue.ts            # 事件队列
 │   ├── storage-service.ts        # 存储服务
 │   ├── session-analyzer.ts       # 会话分析
@@ -245,8 +488,8 @@ claude-daemon/
 │   ├── health-monitor.ts         # 健康监控
 │   ├── cleanup-service.ts        # 数据清理
 │   ├── plugin-manager.ts         # 插件管理器
-│   ├── plugin-context.ts         # 插件上下文
-│   └── plugin-interface.ts       # 插件接口定义
+│   ├── agent-registry.ts         # Agent 注册表
+│   └── message-broker.ts         # 消息代理
 │
 ├── plugins/                       # 插件目录
 │   └── claude-openai-proxy/      # OpenAI Proxy 插件示例
@@ -257,11 +500,25 @@ claude-daemon/
 ├── hooks-push/                    # 推送模式 Hooks
 │   ├── SessionRecorder.hook.ts   # 会话启动
 │   ├── SessionToolCapture.hook.ts # 工具调用
-│   └── SessionAnalyzer.hook.ts   # 会话结束
+│   ├── SessionAnalyzer.hook.ts   # 会话结束
+│   ├── AgentStatus.hook.ts       # Agent 状态更新
+│   ├── AgentMessaging.hook.ts    # Agent 消息注入
+│   └── TaskCompletion.hook.ts    # 任务完成报告
+│
+├── skills/                        # 技能系统
+│   └── task-orchestration/       # 任务编排技能
+│       └── src/                  # Master-Worker 协作
+│
+├── agent-configs/                 # Agent 配置
+│   ├── master-agent/             # Master Agent 配置
+│   └── analyzer-agent/           # Analyzer Agent 配置
 │
 ├── web/                          # Web UI
 │   ├── server.ts                 # Web 服务器
 │   ├── api/                      # API 路由
+│   │   ├── sessions.ts           # 会话 API
+│   │   ├── agents.ts             # Agent API
+│   │   └── stats.ts              # 统计 API
 │   └── public/                   # 前端资源
 │
 ├── lib/                          # 共享库
@@ -273,8 +530,17 @@ claude-daemon/
 │   ├── SessionQuery.ts           # 会话查询
 │   └── SessionStats.ts           # 统计分析
 │
+├── docs/                         # 文档目录 📚
+│   ├── architecture/             # 架构文档
+│   ├── guides/                   # 用户指南
+│   ├── features/                 # 功能文档
+│   ├── testing-reports/          # 测试报告
+│   ├── release/                  # 发布文档
+│   ├── demos/                    # 演示文档
+│   └── legacy/                   # 旧文档
+│
 ├── bin/                          # 可执行文件
-│   └── claude-daemon             # 管理工具
+│   └── cli.js                    # CLI 管理工具
 │
 ├── systemd/                      # Linux 系统服务
 │   └── claude-daemon@.service    # systemd 配置
@@ -282,9 +548,12 @@ claude-daemon/
 ├── launchd/                      # macOS 系统服务
 │   └── com.claudecode.daemon.plist # launchd 配置
 │
+├── install.sh                    # Linux/macOS 安装脚本
+├── install-windows-final.ps1     # Windows 安装脚本
 ├── daemon-config.example.json    # 插件配置示例
-├── install-daemon.sh             # 安装脚本
-├── DAEMON-GUIDE.md               # 完整使用指南
+├── CLAUDE.md                     # 开发者指南
+├── CHANGELOG.md                  # 版本更新日志
+├── QUICK-START.md                # 快速开始指南
 └── README.md                     # 本文档
 ```
 
@@ -292,28 +561,51 @@ claude-daemon/
 
 ## 📚 文档
 
+### 核心文档
 | 文档 | 说明 |
 |------|------|
-| [DAEMON-GUIDE.md](DAEMON-GUIDE.md) | 完整使用指南 |
-| [DAEMON-IMPLEMENTATION.md](DAEMON-IMPLEMENTATION.md) | 实现报告 |
-| [WHAT-IS-BUN.md](WHAT-IS-BUN.md) | Bun 运行时介绍 |
-| [FINAL-TEST-REPORT.md](FINAL-TEST-REPORT.md) | 完整测试报告 |
-| [FUNCTION-CHECK-REPORT.md](FUNCTION-CHECK-REPORT.md) | 功能检查报告 |
+| [QUICK-START.md](QUICK-START.md) | 快速开始指南 |
+| [CLAUDE.md](CLAUDE.md) | 开发者指南（Claude Code 专用） |
+| [CHANGELOG.md](CHANGELOG.md) | 版本更新日志 |
+
+### 用户指南
+| 文档 | 说明 |
+|------|------|
+| [Daemon 使用指南](docs/guides/DAEMON-GUIDE.md) | 守护进程完整使用指南 |
+| [Web UI 指南](docs/guides/WEB-UI-GUIDE.md) | Web 界面使用说明 |
+| [推送模式指南](docs/guides/PUSH-GUIDE.md) | Hook 推送模式详解 |
+
+### 架构文档
+| 文档 | 说明 |
+|------|------|
+| [系统概览](docs/architecture/OVERVIEW.md) | 系统架构概览 |
+| [实现细节](docs/architecture/DAEMON-IMPLEMENTATION.md) | 守护进程实现报告 |
+| [Agent 系统](docs/architecture/AGENTS.md) | 多 Agent 协作架构 |
+
+### 测试报告
+| 文档 | 说明 |
+|------|------|
+| [综合测试报告](docs/testing-reports/COMPREHENSIVE-TESTING-COMPLETE.md) | v1.3.4 完整测试总结 |
+| [端到端测试](docs/testing-reports/E2E-TEST-REPORT.md) | E2E 测试结果 |
+| [Windows IPC 实现](docs/testing-reports/BUG-002-IMPLEMENTATION.md) | Windows 平台支持实现 |
+
+📖 **完整文档索引**: [docs/README.md](docs/README.md)
 
 ---
 
-## 🔧 会话类型
+## 🔧 会话类型分类
 
-系统自动识别以下会话类型：
+系统使用智能算法自动识别会话类型：
 
-| 类型 | 描述 | 判断依据 |
-|------|------|---------|
-| `coding` | 编码 | Edit/Write 操作 > 40% |
-| `debugging` | 调试 | 有测试命令 + Read > Edit |
-| `research` | 研究 | Grep/Glob > 30% + Read > Edit |
-| `writing` | 写作 | Markdown 文件编辑 > 50% |
-| `git` | Git 操作 | Git 命令 > 50% |
-| `mixed` | 混合 | 无明显模式 |
+| 类型 | 描述 | 判断依据 | 示例场景 |
+|------|------|---------|---------|
+| `coding` | 编码 | Edit/Write 操作 > 40% | 实现新功能、修改代码 |
+| `debugging` | 调试 | 有测试命令 + Read > Edit | 运行测试、修复 bug |
+| `research` | 研究 | Grep/Glob > 30% + Read > Edit | 代码探索、理解项目 |
+| `writing` | 写作 | Markdown 文件编辑 > 50% | 编写文档、README |
+| `git` | Git 操作 | Git 命令 > 50% | 提交代码、创建 PR |
+| `refactoring` | 重构 | 高 Edit 比例 + 无新文件 | 代码重构、优化 |
+| `mixed` | 混合 | 无明显模式 | 多种操作混合 |
 
 ---
 
@@ -359,6 +651,14 @@ export MAX_OUTPUT_LENGTH=5000
 # 超时配置
 export HOOK_TIMEOUT=10000
 export GIT_TIMEOUT=3000
+
+# Web UI 配置
+export WEB_PORT=3001
+export WEB_HOST=127.0.0.1
+
+# IPC 配置（通常无需设置，自动检测）
+# Linux/macOS: export DAEMON_SOCKET=/tmp/claude-daemon.sock
+# Windows: export DAEMON_SOCKET=127.0.0.1:39281
 ```
 
 ### 配置文件
@@ -385,42 +685,49 @@ export GIT_TIMEOUT=3000
 
 ## 🧪 测试状态
 
-| 测试项 | 状态 |
-|-------|------|
-| 守护进程启动 | ✅ PASS |
-| Socket 通信 | ✅ PASS |
-| 事件处理 | ✅ PASS |
-| 数据存储 | ✅ PASS |
-| 会话分析 | ✅ PASS |
-| 定时任务 | ✅ PASS |
-| 健康检查 | ✅ PASS |
-| 优雅关闭 | ✅ PASS |
+### v1.3.4 测试结果
 
-**总计**: 12/12 通过 (100%)
+| 测试阶段 | 通过率 | 详情 |
+|---------|--------|------|
+| 静态分析 | 9 个问题识别 | 代码质量检查 |
+| 组件测试 | 22/22 (100%) | 单元和集成测试 |
+| API 测试 | 7/7 (100%) | Web UI 端点验证 |
+| E2E 测试 | 15/15 (100%) | 端到端场景测试 |
+| Windows IPC | ✅ 通过 | TCP Socket 通信验证 |
+| Hook 错误处理 | ✅ 通过 | 6 个 hooks 防御性处理 |
 
-详见 [完整测试报告](FINAL-TEST-REPORT.md)
+**总计**: 51/53 通过 (96%) | **状态**: ✅ 生产就绪
+
+详见 [综合测试报告](docs/testing-reports/COMPREHENSIVE-TESTING-COMPLETE.md)
 
 ---
 
-## 🔄 从 Hook 模式迁移
+## 🔄 升级指南
 
-如果你使用旧的 Hook 模式，升级步骤：
+### 从旧版本升级
 
 ```bash
-# 1. 备份现有配置
-cp ~/.claude/settings.json ~/.claude/settings.json.backup
+# 1. 备份现有数据
+cp -r ~/.claude ~/.claude.backup
 
-# 2. 运行新的安装脚本
-./install-daemon.sh
+# 2. 拉取最新代码
+git pull origin main
 
-# 3. 启动守护进程
-claude-daemon start
+# 3. 重新安装
+# Linux/macOS:
+./install.sh
 
-# 4. 验证
-claude-daemon status
+# Windows:
+powershell -ExecutionPolicy Bypass -File install-windows-final.ps1
+
+# 4. 重启守护进程
+npm run dev
 ```
 
-**注意**: 守护进程模式完全向后兼容，旧数据可以继续使用。
+**注意**:
+- v1.3.4+ 完全向后兼容，旧数据可以继续使用
+- Windows 用户会自动切换到 TCP Socket IPC
+- 所有配置和数据保持不变
 
 ---
 
@@ -428,6 +735,7 @@ claude-daemon status
 
 ### 守护进程无法启动
 
+**Linux/macOS:**
 ```bash
 # 检查 Bun 是否安装
 which bun
@@ -436,11 +744,24 @@ which bun
 cat ~/.claude/daemon.log
 
 # 手动启动测试
-bun ~/.claude/daemon/main.ts
+bun daemon/main.ts --web
+```
+
+**Windows:**
+```powershell
+# 检查 Bun 是否安装
+where bun
+
+# 查看日志
+Get-Content -Tail 50 $env:USERPROFILE\.claude\daemon.log
+
+# 手动启动测试
+bun daemon/main.ts --web
 ```
 
 ### Hooks 不推送数据
 
+**Linux/macOS:**
 ```bash
 # 检查 Socket 是否存在
 ls -la /tmp/claude-daemon.sock
@@ -452,17 +773,42 @@ echo '{"test":true}' | nc -U /tmp/claude-daemon.sock
 ls -la ~/.claude/hooks/
 ```
 
-### 查看详细日志
+**Windows:**
+```powershell
+# 检查 TCP 端口是否监听
+netstat -ano | findstr "39281"
 
-```bash
-# 查看最后 N 行
-claude-daemon logs 200
+# 测试连接
+Test-NetConnection -ComputerName 127.0.0.1 -Port 39281
 
-# 或直接查看/实时监控文件
-tail -f ~/.claude/daemon.log
+# 检查 Hooks
+Get-ChildItem $env:USERPROFILE\.claude\hooks\
 ```
 
-更多故障排除，请查看 [DAEMON-GUIDE.md](DAEMON-GUIDE.md#故障排除)
+### 查看详细日志
+
+**Linux/macOS:**
+```bash
+# 查看最后 N 行
+tail -n 200 ~/.claude/daemon.log
+
+# 实时监控
+tail -f ~/.claude/daemon.log
+
+# 使用 systemd (如果作为服务运行)
+journalctl -u claude-daemon@$USER -f
+```
+
+**Windows:**
+```powershell
+# 查看最后 N 行
+Get-Content -Tail 200 $env:USERPROFILE\.claude\daemon.log
+
+# 实时监控
+Get-Content -Tail 50 -Wait $env:USERPROFILE\.claude\daemon.log
+```
+
+更多故障排除，请查看 [Daemon 使用指南](docs/guides/DAEMON-GUIDE.md#故障排除)
 
 ---
 
