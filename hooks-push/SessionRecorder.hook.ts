@@ -10,7 +10,18 @@ import { join } from 'path';
 import { hostname } from 'os';
 import { config } from '../lib/config.ts';
 
-const DAEMON_SOCKET = '/tmp/claude-daemon.sock';
+// 获取平台特定的 IPC 路径
+// Note: Bun v1.3.5 has a bug with Windows named pipes that causes crashes.
+// As a workaround, we use TCP sockets on localhost for Windows.
+function getIPCPath(): string {
+  if (process.platform === 'win32') {
+    return '127.0.0.1:39281';  // TCP socket on localhost
+  } else {
+    return '/tmp/claude-daemon.sock';  // Unix socket
+  }
+}
+
+const DAEMON_SOCKET = getIPCPath();
 const PUSH_TIMEOUT = 2000;
 
 // 读取 Hook 输入 - 添加错误处理

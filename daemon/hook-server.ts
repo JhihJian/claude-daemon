@@ -2,14 +2,33 @@
 /**
  * Hook Server - 接收 Hook 推送的数据
  *
- * 守护进程的一部分，监听 Unix Socket，接收来自 Hook 的事件数据
+ * 守护进程的一部分，监听 IPC 连接，接收来自 Hook 的事件数据
+ * 支持 Unix Socket (Linux/macOS) 和 Named Pipes (Windows)
  */
 
 import { createServer, Server, Socket } from 'net';
 import { existsSync, unlinkSync } from 'fs';
+import { join } from 'path';
 import { createHookLogger } from '../lib/logger.ts';
 
 const logger = createHookLogger('HookServer');
+
+/**
+ * 获取平台特定的 IPC 路径
+ *
+ * Note: Bun v1.3.5 has a bug with Windows named pipes that causes crashes.
+ * As a workaround, we use TCP sockets on localhost for Windows.
+ */
+function getIPCPath(name: string = 'claude-daemon'): string {
+  if (process.platform === 'win32') {
+    // Windows: Use TCP socket on localhost as workaround for Bun named pipe bug
+    // Port 39281 = "CLAUDE" in phone keypad
+    return '127.0.0.1:39281';
+  } else {
+    // Unix: 使用 Unix Socket
+    return `/tmp/${name}.sock`;
+  }
+}
 
 export interface HookEvent {
   hook_name: string;
@@ -39,10 +58,17 @@ export class HookServer {
   private eventHandlers: Map<string, (event: HookEvent) => Promise<void>>;
   private commandHandlers: Map<string, CommandHandler>;
 
-  constructor(socketPath: string = '/tmp/claude-daemon.sock') {
-    this.socketPath = socketPath;
+  constructor(socketPath?: string) {
+    // 如果没有提供路径，使用平台特定的默认路径
+    this.socketPath = socketPath || getIPCPath('claude-daemon');
     this.eventHandlers = new Map();
     this.commandHandlers = new Map();
+
+    logger.info('HookServer initialized', {
+      platform: process.platform,
+      socketPath: this.socketPath,
+      ipcType: process.platform === 'win32' ? 'Named Pipe' : 'Unix Socket'
+    });
   }
 
   /**
@@ -72,8 +98,10 @@ export class HookServer {
    * 启动服务器
    */
   async start(): Promise<void> {
-    // 清理旧的 socket 文件
-    if (existsSync(this.socketPath)) {
+    const isWindows = process.platform === 'win32';
+
+    // 清理旧的 socket 文件 (仅 Unix)
+    if (!isWindows && existsSync(this.socketPath)) {
       logger.info('Removing old socket file', { socketPath: this.socketPath });
       unlinkSync(this.socketPath);
     }
@@ -83,10 +111,28 @@ export class HookServer {
     });
 
     return new Promise((resolve, reject) => {
-      this.server!.listen(this.socketPath, () => {
-        logger.info('Hook server started', { socketPath: this.socketPath });
-        resolve();
-      });
+      if (isWindows) {
+        // Windows: Listen on TCP port
+        const [host, portStr] = this.socketPath.split(':');
+        const port = parseInt(portStr, 10);
+        this.server!.listen(port, host, () => {
+          logger.info(`Hook server started (TCP Socket)`, {
+            host,
+            port,
+            platform: process.platform
+          });
+          resolve();
+        });
+      } else {
+        // Unix: Listen on Unix socket
+        this.server!.listen(this.socketPath, () => {
+          logger.info(`Hook server started (Unix Socket)`, {
+            socketPath: this.socketPath,
+            platform: process.platform
+          });
+          resolve();
+        });
+      }
 
       this.server!.on('error', (error) => {
         logger.error('Server error', error);
@@ -212,8 +258,8 @@ export class HookServer {
         this.server.close(() => {
           logger.info('Hook server stopped');
 
-          // 清理 socket 文件
-          if (existsSync(this.socketPath)) {
+          // 清理 socket 文件 (仅 Unix)
+          if (process.platform !== 'win32' && existsSync(this.socketPath)) {
             unlinkSync(this.socketPath);
           }
 
