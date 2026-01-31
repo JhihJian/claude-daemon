@@ -3,9 +3,12 @@
 > 🚀 自动记录、分析和监控 Claude Code 会话的守护线程系统
 
 [![GitHub](https://img.shields.io/badge/GitHub-claude--daemon-blue?logo=github)](https://github.com/JhihJian/claude-daemon)
+[![CI](https://github.com/JhihJian/claude-daemon/workflows/CI/badge.svg)](https://github.com/JhihJian/claude-daemon/actions)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black?logo=bun)](https://bun.sh)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Test](https://img.shields.io/badge/Tests-51%2F53%20Passed-success)](docs/testing-reports/COMPREHENSIVE-TESTING-COMPLETE.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Code of Conduct](https://img.shields.io/badge/Code%20of%20Conduct-Contributor%20Covenant-purple.svg)](CODE_OF_CONDUCT.md)
 
 ## 🌟 特性亮点
 
@@ -812,15 +815,179 @@ Get-Content -Tail 50 -Wait $env:USERPROFILE\.claude\daemon.log
 
 ---
 
+## ❓ 常见问题 (FAQ)
+
+### 安装和配置
+
+**Q: 如何验证守护进程是否正在运行？**
+
+A: 检查方法：
+```bash
+# Linux/macOS - 检查 Unix Socket
+ls -la /tmp/claude-daemon.sock
+
+# Windows - 检查 TCP 端口
+netstat -ano | findstr "39281"
+
+# 访问 Web UI
+curl http://127.0.0.1:3001/api/health
+```
+
+**Q: 守护进程启动失败怎么办？**
+
+A: 常见原因和解决方法：
+1. 端口被占用 - 更改端口或停止占用进程
+2. Bun 未安装 - 运行 `curl -fsSL https://bun.sh/install | bash`
+3. 权限问题 - 确保 `~/.claude/` 目录有写权限
+4. 查看日志 - `tail -f ~/.claude/daemon.log`
+
+**Q: 如何更新到最新版本？**
+
+A: 更新步骤：
+```bash
+cd claude-daemon
+git pull origin main
+npm run dev  # 重启守护进程
+```
+
+### 使用问题
+
+**Q: 会话没有被记录怎么办？**
+
+A: 检查清单：
+1. 守护进程是否运行
+2. Hooks 是否正确安装在 `~/.claude/hooks/`
+3. Hooks 是否有执行权限 (755)
+4. 手动测试 hook: `echo '{"session_id":"test"}' | bun ~/.claude/hooks/SessionRecorder.hook.ts`
+
+**Q: Web UI 无法访问？**
+
+A: 解决方法：
+1. 确认守护进程启动时使用了 `--web` 参数
+2. 检查端口是否被占用
+3. 尝试访问 `http://127.0.0.1:3001`（注意是 127.0.0.1 不是 localhost）
+4. 检查防火墙设置
+
+**Q: 如何清理旧的会话数据？**
+
+A: 数据位置和清理：
+```bash
+# 查看数据大小
+du -sh ~/.claude/SESSIONS/
+
+# 手动清理（谨慎操作）
+rm -rf ~/.claude/SESSIONS/raw/2025-*  # 删除 2025 年的数据
+
+# 守护进程会自动清理 30 天前的数据
+```
+
+### 平台特定问题
+
+**Q: Windows 上 IPC 连接失败？**
+
+A: Windows 使用 TCP Socket (127.0.0.1:39281)：
+1. 检查端口是否监听: `netstat -ano | findstr "39281"`
+2. 检查防火墙是否阻止本地连接
+3. 确认没有其他程序占用该端口
+
+**Q: macOS 上权限被拒绝？**
+
+A: 解决方法：
+```bash
+# 修复目录权限
+chmod 700 ~/.claude
+chmod 755 ~/.claude/hooks/*.ts
+
+# 如果使用 launchd
+launchctl unload ~/Library/LaunchAgents/com.claudecode.daemon.plist
+launchctl load ~/Library/LaunchAgents/com.claudecode.daemon.plist
+```
+
+### 高级功能
+
+**Q: 如何开发自定义插件？**
+
+A: 参考示例：
+1. 查看 `plugins/claude-openai-proxy/` 示例
+2. 阅读 [插件开发文档](docs/architecture/DAEMON-IMPLEMENTATION.md)
+3. 实现 `PluginInterface` 接口
+4. 在 `daemon-config.json` 中配置
+
+**Q: 如何使用多 Agent 协作功能？**
+
+A: 使用步骤：
+1. 查看 `skills/task-orchestration/` 示例
+2. 阅读 [Agent 系统文档](docs/architecture/AGENTS.md)
+3. 配置 agent 配置文件
+4. 使用消息系统进行通信
+
+**Q: 如何自定义会话分类规则？**
+
+A: 修改配置：
+```json
+// ~/.claude/session-config.json
+{
+  "classificationThresholds": {
+    "coding": 0.4,      // Edit/Write > 40%
+    "debugging": 0.0,   // 有测试命令
+    "research": 0.3,    // Grep/Glob > 30%
+    "writing": 0.5,     // Markdown > 50%
+    "git": 0.5          // Git 命令 > 50%
+  }
+}
+```
+
+### 贡献和开发
+
+**Q: 如何贡献代码？**
+
+A: 请阅读 [贡献指南](CONTRIBUTING.md)，包含：
+- 开发环境设置
+- 代码规范
+- 提交流程
+- 测试要求
+
+**Q: 如何报告 Bug？**
+
+A: 使用 [Bug 报告模板](https://github.com/JhihJian/claude-daemon/issues/new?template=bug_report.yml)，提供：
+- 详细的复现步骤
+- 系统和版本信息
+- 相关日志输出
+- 预期和实际行为
+
+**Q: 在哪里获取帮助？**
+
+A: 获取帮助的途径：
+- 📚 [文档](https://github.com/JhihJian/claude-daemon#readme)
+- 💬 [GitHub Discussions](https://github.com/JhihJian/claude-daemon/discussions)
+- 🐛 [Issues](https://github.com/JhihJian/claude-daemon/issues)
+- 📖 [完整文档索引](docs/README.md)
+
+---
+
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request！
+我们欢迎所有形式的贡献！无论是报告 bug、提出新功能、改进文档还是提交代码。
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+### 如何贡献
+
+1. 阅读 [贡献指南](CONTRIBUTING.md)
+2. 查看 [行为准则](CODE_OF_CONDUCT.md)
+3. Fork 本仓库
+4. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+5. 提交更改 (`git commit -m 'feat: add some amazing feature'`)
+6. 推送到分支 (`git push origin feature/AmazingFeature`)
+7. 开启 Pull Request
+
+### 贡献方式
+
+- 🐛 [报告 Bug](https://github.com/JhihJian/claude-daemon/issues/new?template=bug_report.yml)
+- 💡 [提出功能建议](https://github.com/JhihJian/claude-daemon/issues/new?template=feature_request.yml)
+- 📚 改进文档
+- 🧪 添加测试
+- 💻 提交代码
+
+详细信息请查看 [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
