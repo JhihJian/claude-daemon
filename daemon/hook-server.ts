@@ -3,11 +3,14 @@
  * Hook Server - 接收 Hook 推送的数据
  *
  * 守护进程的一部分，监听 Unix Socket，接收来自 Hook 的事件数据
+ * 扩展支持Agent操作（注册、注销、状态更新等）
  */
 
 import { createServer, Server, Socket } from 'net';
 import { existsSync, unlinkSync } from 'fs';
 import { createHookLogger } from '../lib/logger.ts';
+import { AgentRegistry } from './agent-registry.ts';
+import type { AgentInfo } from './types/agent-types';
 
 const logger = createHookLogger('HookServer');
 
@@ -23,10 +26,34 @@ export class HookServer {
   private server?: Server;
   private socketPath: string;
   private eventHandlers: Map<string, (event: HookEvent) => Promise<void>>;
+  private agentRegistry: AgentRegistry;
 
   constructor(socketPath: string = '/tmp/claude-daemon.sock') {
     this.socketPath = socketPath;
     this.eventHandlers = new Map();
+    this.agentRegistry = new AgentRegistry();
+    this.setupAgentEventHandlers();
+  }
+
+  /**
+   * 设置Agent事件处理器
+   */
+  private setupAgentEventHandlers(): void {
+    this.agentRegistry.on("event", (event) => {
+      logger.debug('Agent event', {
+        type: event.type,
+        sessionId: event.agent.sessionId,
+        label: event.agent.label,
+        status: event.agent.status
+      });
+    });
+  }
+
+  /**
+   * 获取AgentRegistry实例（供外部访问）
+   */
+  getAgentRegistry(): AgentRegistry {
+    return this.agentRegistry;
   }
 
   /**
@@ -100,7 +127,16 @@ export class HookServer {
    */
   private async handleMessage(message: string, socket: Socket): Promise<void> {
     try {
-      const event: HookEvent = JSON.parse(message);
+      const data = JSON.parse(message);
+
+      // 检查是否为action操作（Agent操作）
+      if (data.action) {
+        await this.handleAgentAction(data, socket);
+        return;
+      }
+
+      // 原有的Hook事件处理
+      const event: HookEvent = data as HookEvent;
 
       logger.debug('Received event', {
         hookName: event.hook_name,
@@ -134,6 +170,84 @@ export class HookServer {
   }
 
   /**
+   * 处理Agent相关操作
+   */
+  private async handleAgentAction(data: any, socket: Socket): Promise<void> {
+    const { action, session_id, type, label, config, working_dir, parent_id, status } = data;
+
+    try {
+      let result: any = { success: false };
+
+      switch (action) {
+        case "register_agent": {
+          const agent = this.agentRegistry.register({
+            sessionId: session_id,
+            type: type || "master",
+            label: label || `${type}-${session_id.slice(0, 8)}`,
+            agentConfig: config || "default",
+            workingDir: working_dir || process.cwd(),
+            parentId: parent_id,
+          });
+          result = { success: true, agent };
+          break;
+        }
+
+        case "unregister_agent": {
+          const unregistered = this.agentRegistry.unregister(session_id);
+          result = { success: unregistered };
+          break;
+        }
+
+        case "update_agent_status": {
+          const updated = this.agentRegistry.updateStatus(session_id, status);
+          result = { success: !!updated, agent: updated };
+          break;
+        }
+
+        case "agent_heartbeat": {
+          const updated = this.agentRegistry.heartbeat(session_id);
+          result = { success: !!updated, agent: updated };
+          break;
+        }
+
+        case "get_agent": {
+          const agent = this.agentRegistry.get(session_id);
+          result = { success: true, agent };
+          break;
+        }
+
+        case "list_agents": {
+          const query: any = {};
+          if (data.type) query.type = data.type;
+          if (data.status) query.status = data.status;
+          if (data.parent_id) query.parentId = data.parent_id;
+          if (data.config) query.agentConfig = data.config;
+
+          const agents = this.agentRegistry.query(query);
+          result = { success: true, agents };
+          break;
+        }
+
+        case "get_all_agents": {
+          const agents = this.agentRegistry.getAll();
+          result = { success: true, agents };
+          break;
+        }
+
+        default:
+          result = { success: false, error: "Unknown action" };
+      }
+
+      socket.write(JSON.stringify(result) + "\n");
+    } catch (error) {
+      socket.write(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }) + "\n");
+    }
+  }
+
+  /**
    * 停止服务器
    */
   async stop(): Promise<void> {
@@ -147,9 +261,13 @@ export class HookServer {
             unlinkSync(this.socketPath);
           }
 
+          // 清理Agent注册表
+          this.agentRegistry.destroy();
+
           resolve();
         });
       } else {
+        this.agentRegistry.destroy();
         resolve();
       }
     });
