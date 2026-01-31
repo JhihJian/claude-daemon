@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 Documentation
+    url: https://github.com/JhihJian/claude-daemon#readme
+    about: Check the documentation for usage guides and examples
+  - name: 💬 Discussions
+    url: https://github.com/JhihJian/claude-daemon/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 🔒 Security Issue
+    url: https://github.com/JhihJian/claude-daemon/security/advisories/new
+    about: Report a security vulnerability privately
