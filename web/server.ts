@@ -11,6 +11,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { SessionsAPI } from './api/sessions';
 import { StatsAPI } from './api/stats';
+import { AgentsAPI, ConfigPackagesAPI } from './api/agents';
 import { createHookLogger } from '../lib/logger';
 
 const logger = createHookLogger('WebServer');
@@ -24,6 +25,8 @@ export class WebServer {
   private hostname: string;
   private sessionsAPI: SessionsAPI;
   private statsAPI: StatsAPI;
+  private agentsAPI: AgentsAPI;
+  private configPackagesAPI: ConfigPackagesAPI;
   private server: any;
   private wsClients: Set<any> = new Set();
 
@@ -32,6 +35,8 @@ export class WebServer {
     this.hostname = hostname;
     this.sessionsAPI = new SessionsAPI();
     this.statsAPI = new StatsAPI();
+    this.agentsAPI = new AgentsAPI();
+    this.configPackagesAPI = new ConfigPackagesAPI();
   }
 
   /**
@@ -248,6 +253,125 @@ export class WebServer {
       };
     }
 
+    // ============================================================
+    // /api/agents/*
+    // ============================================================
+    if (segments[1] === 'agents') {
+      // GET /api/agents - Get all agents
+      if (!segments[2] || segments[2] === 'list') {
+        const type = url.searchParams.get('type') || undefined;
+        const status = url.searchParams.get('status') || undefined;
+        const parentId = url.searchParams.get('parentId') || undefined;
+        const config = url.searchParams.get('config') || undefined;
+
+        return {
+          status: 200,
+          data: await this.agentsAPI.listAgents({
+            type: type as any,
+            status: status as any,
+            parentId: parentId || undefined,
+            config: config || undefined,
+          }),
+        };
+      }
+
+      // GET /api/agents/stats - Get agent statistics
+      if (segments[2] === 'stats') {
+        return {
+          status: 200,
+          data: await this.agentsAPI.getStats(),
+        };
+      }
+
+      // GET /api/agents/workers - Get available workers
+      if (segments[2] === 'workers') {
+        return {
+          status: 200,
+          data: await this.agentsAPI.getAvailableWorkers(),
+        };
+      }
+
+      // GET /api/agents/:sessionId - Get specific agent
+      if (segments[2] && segments[2] !== 'list' && segments[2] !== 'stats' && segments[2] !== 'workers') {
+        const sessionId = segments[2];
+
+        // GET agent details
+        if (req.method === 'GET') {
+          const agent = await this.agentsAPI.getAgent(sessionId);
+          if (!agent) {
+            return { status: 404, data: { error: 'Agent not found' } };
+          }
+          return { status: 200, data: agent };
+        }
+
+        // PUT update agent status
+        if (req.method === 'PUT') {
+          // Parse body for PUT request
+          const body = await req.json().catch(() => ({}));
+          const success = await this.agentsAPI.updateAgentStatus(sessionId, body.status);
+          return {
+            status: success ? 200 : 404,
+            data: success ? { success: true } : { error: 'Failed to update agent' },
+          };
+        }
+
+        // DELETE unregister agent
+        if (req.method === 'DELETE') {
+          const success = await this.agentsAPI.unregisterAgent(sessionId);
+          return {
+            status: success ? 200 : 404,
+            data: success ? { success: true } : { error: 'Failed to unregister agent' },
+          };
+        }
+
+        // POST send message to agent
+        if (req.method === 'POST' && segments[3] === 'message') {
+          const body = await req.json().catch(() => ({}));
+          const message = await this.agentsAPI.sendMessage({
+            from: body.from || 'system',
+            to: sessionId,
+            type: body.type || 'task',
+            content: body.content || '',
+            metadata: body.metadata,
+            replyTo: body.replyTo,
+          });
+          return {
+            status: 200,
+            data: message,
+          };
+        }
+
+        // GET messages for agent
+        if (req.method === 'GET' && segments[3] === 'messages') {
+          const unreadOnly = url.searchParams.get('unreadOnly') === 'true';
+          const messages = await this.agentsAPI.getMessages(sessionId, unreadOnly);
+          return { status: 200, data: messages };
+        }
+      }
+    }
+
+    // ============================================================
+    // /api/configs/*
+    // ============================================================
+    if (segments[1] === 'configs') {
+      // GET /api/configs - Get all config packages
+      if (!segments[2]) {
+        return {
+          status: 200,
+          data: await this.configPackagesAPI.getConfigPackages(),
+        };
+      }
+
+      // GET /api/configs/:name - Get specific config package
+      if (segments[2]) {
+        const config = await this.configPackagesAPI.getConfigPackage(segments[2]);
+        if (!config) {
+          return { status: 404, data: { error: 'Config package not found' } };
+        }
+        return { status: 200, data: config };
+      }
+    }
+
     return {
       status: 404,
       data: { error: 'API endpoint not found' },
@@ -312,6 +436,46 @@ export class WebServer {
         logger.error('WebSocket broadcast error', { error: error.message });
       }
     }
+  }
+
+  /**
+   * 广播 Agent 事件
+   */
+  broadcastAgentEvent(event: string, data: any): void {
+    this.broadcast({
+      type: 'agent_event',
+      event,
+      data,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * 广播 Agent 注册事件
+   */
+  broadcastAgentRegistered(agent: any): void {
+    this.broadcastAgentEvent('agent_registered', agent);
+  }
+
+  /**
+   * 广播 Agent 更新事件
+   */
+  broadcastAgentUpdated(agent: any): void {
+    this.broadcastAgentEvent('agent_updated', agent);
+  }
+
+  /**
+   * 广播 Agent 注销事件
+   */
+  broadcastAgentUnregistered(sessionId: string): void {
+    this.broadcastAgentEvent('agent_unregistered', { sessionId });
+  }
+
+  /**
+   * 广播新消息事件
+   */
+  broadcastNewMessage(message: any): void {
+    this.broadcastAgentEvent('new_message', message);
   }
 
   /**
