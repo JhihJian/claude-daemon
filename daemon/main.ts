@@ -258,7 +258,7 @@ class ClaudeDaemon {
 
     // 3. 启动 Web UI（可选）
     if (options?.enableWebUI) {
-      const port = options?.webPort || 3001;  // 改为 3001 避免冲突
+      const port = options?.webPort || 3000;  
       this.webServer = new WebServer(port, '127.0.0.1', this.hookServer);
       await this.webServer.start();
       logger.info('✓ Web UI started');
@@ -356,8 +356,8 @@ class ClaudeDaemon {
 if (import.meta.main) {
   const daemon = new ClaudeDaemon();
 
-  // 默认启用 Web UI
-  daemon.start({ enableWebUI: true }).catch((error) => {
+  // 默认启用 Web UI，使用端口 3001
+  daemon.start({ enableWebUI: true, webPort: 3001 }).catch((error) => {
     console.error('[ClaudeDaemon] Fatal error:', error);
     process.exit(1);
   });
