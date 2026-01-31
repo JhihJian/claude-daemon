@@ -356,7 +356,8 @@ class ClaudeDaemon {
 if (import.meta.main) {
   const daemon = new ClaudeDaemon();
 
-  daemon.start().catch((error) => {
+  // 默认启用 Web UI
+  daemon.start({ enableWebUI: true }).catch((error) => {
     console.error('[ClaudeDaemon] Fatal error:', error);
     process.exit(1);
   });
