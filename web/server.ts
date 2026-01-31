@@ -13,6 +13,7 @@ import { SessionsAPI } from './api/sessions';
 import { StatsAPI } from './api/stats';
 import { AgentsAPI, ConfigPackagesAPI } from './api/agents';
 import { createHookLogger } from '../lib/logger';
+import type { HookServer } from '../daemon/hook-server';
 
 const logger = createHookLogger('WebServer');
 
@@ -29,14 +30,24 @@ export class WebServer {
   private configPackagesAPI: ConfigPackagesAPI;
   private server: any;
   private wsClients: Set<any> = new Set();
+  private hookServer?: HookServer;
 
-  constructor(port: number = 3000, hostname: string = '127.0.0.1') {
+  constructor(port: number = 3000, hostname: string = '127.0.0.1', hookServer?: HookServer) {
     this.port = port;
     this.hostname = hostname;
+    this.hookServer = hookServer;
     this.sessionsAPI = new SessionsAPI();
     this.statsAPI = new StatsAPI();
-    this.agentsAPI = new AgentsAPI();
+    this.agentsAPI = new AgentsAPI(hookServer);
     this.configPackagesAPI = new ConfigPackagesAPI();
+  }
+
+  /**
+   * Set HookServer reference (for late binding)
+   */
+  setHookServer(hookServer: HookServer): void {
+    this.hookServer = hookServer;
+    this.agentsAPI.setHookServer(hookServer);
   }
 
   /**

@@ -259,7 +259,7 @@ class ClaudeDaemon {
     // 3. 启动 Web UI（可选）
     if (options?.enableWebUI) {
       const port = options?.webPort || 3000;
-      this.webServer = new WebServer(port);
+      this.webServer = new WebServer(port, '127.0.0.1', this.hookServer);
       await this.webServer.start();
       logger.info('✓ Web UI started');
     }
