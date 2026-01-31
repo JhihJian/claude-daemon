@@ -1,0 +1,29 @@
+{
+  "$schema": "https://cdn.anthropic.com/claude-settings-schema.json",
+  "name": "master-agent",
+  "description": "Master Agent for orchestrating multi-agent collaboration",
+  "version": "1.0.0",
+  "agentType": "master",
+  "capabilities": [
+    "orchestration",
+    "task_analysis",
+    "result_aggregation",
+    "agent_coordination"
+  ],
+  "hooks": {
+    "session_start": ["AgentStatus.hook.ts"],
+    "session_end": ["AgentStatus.hook.ts"],
+    "tool_call_end": ["AgentMessaging.hook.ts"]
+  },
+  "skills": [
+    "task-orchestration"
+  ],
+  "settings": {
+    "orchestration": {
+      "preferParallel": false,
+      "minAgentsForParallel": 2,
+      "minAgentsForDistributed": 2,
+      "defaultTimeout": 300000
+    }
+  }
+}

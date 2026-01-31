@@ -1,0 +1,27 @@
+{
+  "$schema": "https://cdn.anthropic.com/claude-settings-schema.json",
+  "name": "analyzer-agent",
+  "description": "Worker Agent specializing in code and architecture analysis",
+  "version": "1.0.0",
+  "agentType": "worker",
+  "capabilities": [
+    "code_analysis",
+    "architecture_review",
+    "security_assessment",
+    "performance_analysis",
+    "dependency_analysis"
+  ],
+  "hooks": {
+    "session_start": ["AgentStatus.hook.ts"],
+    "session_end": ["AgentStatus.hook.ts"],
+    "tool_call_end": ["AgentMessaging.hook.ts"]
+  },
+  "settings": {
+    "analysis": {
+      "maxDepth": 5,
+      "includeDependencies": true,
+      "checkSecurity": true,
+      "checkPerformance": true
+    }
+  }
+}
