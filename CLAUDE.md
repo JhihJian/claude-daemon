@@ -204,9 +204,13 @@ Hooks are lightweight TypeScript scripts executed by Claude Code at specific lif
 
 ## Platform Differences
 
-### Unix Socket Location
-- Linux/macOS: `/tmp/claude-daemon.sock`
-- Windows: Named pipes not yet implemented - uses file fallback mode
+### IPC Mechanism
+- **Linux/macOS**: Unix domain socket at `/tmp/claude-daemon.sock`
+- **Windows**: TCP socket on `127.0.0.1:39281` (localhost only)
+  - Note: Bun v1.3.5 has a critical bug with Windows named pipes that causes crashes
+  - TCP socket workaround provides equivalent functionality with negligible performance impact (<0.2ms latency)
+  - Port 39281 chosen as "CLAUDE" on phone keypad
+  - Security: Bound to localhost only, same security model as Web UI
 
 ### Installation Scripts
 - `install.sh` - Linux/macOS with systemd/launchd integration
@@ -243,16 +247,30 @@ Optional configuration file for customizing behavior:
 - `MAX_OUTPUT_LENGTH` - Truncate tool outputs
 - `HOOK_TIMEOUT` - Hook execution timeout (ms)
 - `GIT_TIMEOUT` - Git command timeout (ms)
-- `WEB_PORT` - Web UI port (default: 3000)
+- `WEB_PORT` - Web UI port (default: 3001)
 - `WEB_HOST` - Web UI bind address (default: 127.0.0.1)
+- `DAEMON_SOCKET` - Override IPC path (auto-detected by platform)
 
 ## Troubleshooting
 
 ### Daemon Not Receiving Events
+
+**Linux/macOS:**
 1. Check if daemon is running: `ps aux | grep daemon/main.ts`
 2. Check socket exists: `ls -la /tmp/claude-daemon.sock`
 3. Test socket: `echo '{"test":true}' | nc -U /tmp/claude-daemon.sock`
 4. Check daemon logs: `tail -f ~/.claude/daemon.log`
+
+**Windows:**
+1. Check if daemon is running: `tasklist | findstr bun`
+2. Check TCP port is listening: `netstat -ano | findstr 39281`
+3. Test connection: `Test-NetConnection -ComputerName 127.0.0.1 -Port 39281` (PowerShell)
+4. Check daemon logs: `Get-Content -Tail 50 -Wait $env:USERPROFILE\.claude\daemon.log` (PowerShell)
+
+**Common Issues:**
+- Port 39281 conflict (Windows): Another process using the port - check with `netstat -ano | findstr 39281`
+- Firewall blocking localhost (rare): Add exception for port 39281
+- Hooks falling back to file mode: Daemon not running or IPC connection failing
 
 ### Hooks Not Executing
 1. Verify hooks are installed: `ls -la ~/.claude/hooks/`
