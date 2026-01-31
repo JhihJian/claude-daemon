@@ -1,42 +1,41 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `daemon/`: core Bun-based daemon (hooks ingestion, queueing, storage, scheduling).
-- `hooks/` and `hooks-push/`: hook scripts invoked by Claude Code; produce JSON events.
-- `lib/`: shared utilities (config, logging, error helpers).
-- `tools/`: CLI query utilities (session search/stats).
-- `web/`: Web UI server (`web/server.ts`) + static assets under `web/public/`.
-- `bin/`: CLI entrypoints (e.g., `bin/claude-daemon`, `bin/claude-daemon.sh`).
-- `systemd/` and `launchd/`: service definitions for Linux/macOS.
-- Root scripts: `install.sh`, `install-daemon.sh`, Windows install scripts.
+- `daemon/`: core daemon services (event queue, storage, scheduler, plugins).
+- `hooks/` and `hooks-push/`: Claude hook entry points and variants.
+- `lib/`: shared utilities (config, logger, errors).
+- `tools/`: CLI utilities for querying/stats (`SessionQuery.ts`, `SessionStats.ts`).
+- `plugins/`: optional plugin implementations (e.g., `claude-openai-proxy`).
+- `web/`: Web UI API handlers and static assets (`web/public/`).
+- `test/` plus root `test-*.ts`/`test-daemon.sh`: ad-hoc test scripts.
 
 ## Build, Test, and Development Commands
-This repo is Bun-first (TypeScript executed directly by Bun). Common commands:
-- `./install-daemon.sh`: install runtime, hooks, and system service.
-- `claude-daemon start|stop|restart|status`: manage the daemon after install.
-- `claude-daemon start --web-ui`: start daemon with Web UI enabled.
-- `bun web/server.ts`: run the Web UI server standalone (default `http://127.0.0.1:3000`).
-- `bun tools/SessionQuery.ts recent 10`: list recent sessions.
+- `bun daemon/main.ts --web --port 3000`: run the daemon with Web UI enabled.
+- `bun web/server.ts`: run the Web UI server standalone.
+- `bun tools/SessionQuery.ts recent 5`: query recent sessions (example).
+- `bun tools/SessionStats.ts global`: show global stats (example).
+- `bash test-daemon.sh`: basic daemon smoke tests.
+- `bun test-plugin-load.ts`: plugin load check (similar scripts: `test-plugin-*.ts`).
 
 ## Coding Style & Naming Conventions
-- TypeScript with Bun shebangs (`#!/usr/bin/env bun`).
-- 2-space indentation; keep files ASCII-only unless necessary.
-- Use explicit `.ts` extensions in imports (see `daemon/main.ts`).
-- Filenames: kebab-case for modules, PascalCase for hook files.
-- Classes: PascalCase; functions/vars: camelCase.
+- TypeScript-first; use `.ts` imports with explicit extensions (see `daemon/main.ts`).
+- 2-space indentation, semicolons, and conventional `camelCase` for variables.
+- Files and directories use kebab-case where applicable (e.g., `daemon/health-monitor.ts`).
+- No enforced linter in repo; keep formatting consistent with existing files.
 
 ## Testing Guidelines
-- No automated test runner configured; use `./test-daemon.sh` for smoke checks.
-- Manual validation: start daemon, trigger a session, then query with `bun tools/SessionQuery.ts recent 1`.
-- If adding new features, extend `test-daemon.sh` or add focused scripts under `tools/`.
+- Tests are script-based, not a single framework runner.
+- Name ad-hoc tests as `test-*.ts` or `test-*.sh` and keep them runnable with `bun`/`bash`.
+- Prefer adding a small reproduction script when fixing bugs in hooks or plugins.
 
 ## Commit & Pull Request Guidelines
-- Commit history follows Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:`.
-- Keep commits small and scoped; prefer one logical change per commit.
-- PRs should include: clear description, tested commands run, and screenshots for Web UI changes.
-- Link issues when applicable.
+- Commit messages follow conventional types: `feat:`, `fix:`, `docs:`, `chore:`.
+- Keep commits scoped and descriptive; include issue references when relevant (e.g., `fix: resolve issue #10`).
+- PRs should include a short summary, test evidence (commands run), and any platform-specific notes (Windows/macOS/Linux).
 
-## Security & Configuration Tips
-- Session data lives under `~/.claude/SESSIONS` by default; treat as sensitive.
-- Web UI is intended for localhost; use `WEB_HOST=127.0.0.1` and avoid exposing `0.0.0.0`.
-- Useful env vars: `WEB_PORT`, `WEB_HOST`, `PAI_DIR`.
+## Configuration & Security Tips
+- `daemon-config.example.json` is the template; avoid committing secrets in `daemon-config.json`.
+- Hook and daemon sockets/paths are local-only; document changes in `README.md` or `DAEMON-GUIDE.md`.
+
+## Agent Notes
+- Review `CLAUDE.md` for operational constraints and storage formats before changing daemon internals.

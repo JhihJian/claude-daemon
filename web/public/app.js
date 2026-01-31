@@ -9,6 +9,7 @@ createApp({
   data() {
     return {
       sessions: [],
+      activeSessions: [],
       stats: {
         total_sessions: 0,
         total_duration_hours: 0,
@@ -40,6 +41,7 @@ createApp({
     async init() {
       await this.loadStats();
       await this.loadSessions();
+      await this.loadActiveSessions();
       await this.loadTimeline();
       this.initCharts();
       this.connectWebSocket();
@@ -82,6 +84,23 @@ createApp({
         this.sessions = [];
       } finally {
         this.loading = false;
+      }
+    },
+
+    /**
+     * 加载活跃会话列表
+     */
+    async loadActiveSessions() {
+      try {
+        const response = await fetch('/api/sessions/active');
+        const data = await response.json();
+        this.activeSessions = Array.isArray(data)
+          ? data.map(session => ({ ...session, status: 'active' }))
+          : [];
+        this.refreshSelectedSession();
+      } catch (error) {
+        console.error('Failed to load active sessions:', error);
+        this.activeSessions = [];
       }
     },
 
@@ -211,6 +230,8 @@ createApp({
         if (data.type === 'session_update') {
           this.loadSessions();
           this.loadStats();
+          this.loadActiveSessions();
+          this.refreshSelectedSession();
         }
       };
 
@@ -230,8 +251,56 @@ createApp({
     /**
      * 选择会话
      */
-    selectSession(session) {
-      this.selectedSession = session;
+    async selectSession(session) {
+      if (!session?.session_id) {
+        this.selectedSession = null;
+        return;
+      }
+
+      const isActive = session.status === 'active';
+      const endpoint = isActive
+        ? `/api/sessions/active/${session.session_id}`
+        : `/api/sessions/${session.session_id}`;
+
+      try {
+        const response = await fetch(endpoint);
+        const detail = await response.json();
+        this.selectedSession = detail || session;
+        if (isActive && this.selectedSession) {
+          this.selectedSession.status = 'active';
+        }
+      } catch (error) {
+        console.error('Failed to load session detail:', error);
+        this.selectedSession = session;
+      }
+    },
+
+    /**
+     * 刷新当前选中会话的详情，避免活跃状态残留
+     */
+    async refreshSelectedSession() {
+      if (!this.selectedSession?.session_id) {
+        return;
+      }
+
+      const sessionId = this.selectedSession.session_id;
+      const isActive = this.activeSessions.some(session => session.session_id === sessionId);
+      const endpoint = isActive
+        ? `/api/sessions/active/${sessionId}`
+        : `/api/sessions/${sessionId}`;
+
+      try {
+        const response = await fetch(endpoint);
+        const detail = await response.json();
+        if (detail) {
+          this.selectedSession = detail;
+          if (isActive) {
+            this.selectedSession.status = 'active';
+          }
+        }
+      } catch (error) {
+        console.error('Failed to refresh selected session:', error);
+      }
     },
 
     /**
@@ -315,6 +384,31 @@ createApp({
         mixed: 'bg-gray-100 text-gray-800',
       };
       return colors[type] || colors.mixed;
+    },
+
+    /**
+     * 构建对话列表
+     */
+    getConversationItems(conversation) {
+      if (!conversation) {
+        return [];
+      }
+
+      const items = [];
+      const userMessages = Array.isArray(conversation.user_messages) ? conversation.user_messages : [];
+      const assistantMessages = Array.isArray(conversation.assistant_responses) ? conversation.assistant_responses : [];
+      const max = Math.max(userMessages.length, assistantMessages.length);
+
+      for (let i = 0; i < max; i += 1) {
+        if (userMessages[i]) {
+          items.push({ role: 'user', text: userMessages[i] });
+        }
+        if (assistantMessages[i]) {
+          items.push({ role: 'assistant', text: assistantMessages[i] });
+        }
+      }
+
+      return items;
     },
   },
 }).mount('#app');

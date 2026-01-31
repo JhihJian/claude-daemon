@@ -6,14 +6,13 @@
  * 使用 Bun 内置 Web 服务器提供 RESTful API 和静态文件服务
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { connect } from 'net';
 import { SessionsAPI } from './api/sessions';
 import { StatsAPI } from './api/stats';
-import { AgentsAPI, ConfigPackagesAPI } from './api/agents';
 import { createHookLogger } from '../lib/logger';
-import type { HookServer } from '../daemon/hook-server';
 
 const logger = createHookLogger('WebServer');
 
@@ -26,28 +25,15 @@ export class WebServer {
   private hostname: string;
   private sessionsAPI: SessionsAPI;
   private statsAPI: StatsAPI;
-  private agentsAPI: AgentsAPI;
-  private configPackagesAPI: ConfigPackagesAPI;
   private server: any;
   private wsClients: Set<any> = new Set();
-  private hookServer?: HookServer;
+  private daemonSocketPath = '/tmp/claude-daemon.sock';
 
-  constructor(port: number = 3000, hostname: string = '127.0.0.1', hookServer?: HookServer) {
+  constructor(port: number = 3000, hostname: string = '127.0.0.1') {
     this.port = port;
     this.hostname = hostname;
-    this.hookServer = hookServer;
     this.sessionsAPI = new SessionsAPI();
     this.statsAPI = new StatsAPI();
-    this.agentsAPI = new AgentsAPI(hookServer);
-    this.configPackagesAPI = new ConfigPackagesAPI();
-  }
-
-  /**
-   * Set HookServer reference (for late binding)
-   */
-  setHookServer(hookServer: HookServer): void {
-    this.hookServer = hookServer;
-    this.agentsAPI.setHookServer(hookServer);
   }
 
   /**
@@ -176,6 +162,21 @@ export class WebServer {
         };
       }
 
+      if (segments[2] === 'active' && segments[3]) {
+        const activeDetail = await this.requestDaemon('active_session', { sessionId: segments[3] });
+        return {
+          status: activeDetail.success ? 200 : 404,
+          data: activeDetail.success ? activeDetail.data : null,
+        };
+      }
+      if (segments[2] === 'active') {
+        const active = await this.requestDaemon('active_sessions');
+        return {
+          status: active.success ? 200 : 503,
+          data: active.success ? active.data : [],
+        };
+      }
+
       if (segments[2] === 'by-type') {
         const type = url.searchParams.get('type');
         if (!type) {
@@ -209,7 +210,7 @@ export class WebServer {
         };
       }
 
-      if (segments[2] && segments[2] !== 'recent') {
+      if (segments[2] && !['recent', 'active', 'by-type', 'by-directory', 'by-host'].includes(segments[2])) {
         // /api/sessions/{id}
         const sessionId = segments[2];
         return {
@@ -264,129 +265,55 @@ export class WebServer {
       };
     }
 
-    // ============================================================
-    // /api/agents/*
-    // ============================================================
-    if (segments[1] === 'agents') {
-      // GET /api/agents - Get all agents
-      if (!segments[2] || segments[2] === 'list') {
-        const type = url.searchParams.get('type') || undefined;
-        const status = url.searchParams.get('status') || undefined;
-        const parentId = url.searchParams.get('parentId') || undefined;
-        const config = url.searchParams.get('config') || undefined;
-
-        return {
-          status: 200,
-          data: await this.agentsAPI.listAgents({
-            type: type as any,
-            status: status as any,
-            parentId: parentId || undefined,
-            config: config || undefined,
-          }),
-        };
-      }
-
-      // GET /api/agents/stats - Get agent statistics
-      if (segments[2] === 'stats') {
-        return {
-          status: 200,
-          data: await this.agentsAPI.getStats(),
-        };
-      }
-
-      // GET /api/agents/workers - Get available workers
-      if (segments[2] === 'workers') {
-        return {
-          status: 200,
-          data: await this.agentsAPI.getAvailableWorkers(),
-        };
-      }
-
-      // GET /api/agents/:sessionId - Get specific agent
-      if (segments[2] && segments[2] !== 'list' && segments[2] !== 'stats' && segments[2] !== 'workers') {
-        const sessionId = segments[2];
-
-        // GET agent details
-        if (req.method === 'GET') {
-          const agent = await this.agentsAPI.getAgent(sessionId);
-          if (!agent) {
-            return { status: 404, data: { error: 'Agent not found' } };
-          }
-          return { status: 200, data: agent };
-        }
-
-        // PUT update agent status
-        if (req.method === 'PUT') {
-          // Parse body for PUT request
-          const body = await req.json().catch(() => ({}));
-          const success = await this.agentsAPI.updateAgentStatus(sessionId, body.status);
-          return {
-            status: success ? 200 : 404,
-            data: success ? { success: true } : { error: 'Failed to update agent' },
-          };
-        }
-
-        // DELETE unregister agent
-        if (req.method === 'DELETE') {
-          const success = await this.agentsAPI.unregisterAgent(sessionId);
-          return {
-            status: success ? 200 : 404,
-            data: success ? { success: true } : { error: 'Failed to unregister agent' },
-          };
-        }
-
-        // POST send message to agent
-        if (req.method === 'POST' && segments[3] === 'message') {
-          const body = await req.json().catch(() => ({}));
-          const message = await this.agentsAPI.sendMessage({
-            from: body.from || 'system',
-            to: sessionId,
-            type: body.type || 'task',
-            content: body.content || '',
-            metadata: body.metadata,
-            replyTo: body.replyTo,
-          });
-          return {
-            status: 200,
-            data: message,
-          };
-        }
-
-        // GET messages for agent
-        if (req.method === 'GET' && segments[3] === 'messages') {
-          const unreadOnly = url.searchParams.get('unreadOnly') === 'true';
-          const messages = await this.agentsAPI.getMessages(sessionId, unreadOnly);
-          return { status: 200, data: messages };
-        }
-      }
-    }
-
-    // ============================================================
-    // /api/configs/*
-    // ============================================================
-    if (segments[1] === 'configs') {
-      // GET /api/configs - Get all config packages
-      if (!segments[2]) {
-        return {
-          status: 200,
-          data: await this.configPackagesAPI.getConfigPackages(),
-        };
-      }
-
-      // GET /api/configs/:name - Get specific config package
-      if (segments[2]) {
-        const config = await this.configPackagesAPI.getConfigPackage(segments[2]);
-        if (!config) {
-          return { status: 404, data: { error: 'Config package not found' } };
-        }
-        return { status: 200, data: config };
-      }
-    }
-
     return {
       status: 404,
       data: { error: 'API endpoint not found' },
     };
+  }
+
+  private async requestDaemon(command: string, data?: Record<string, unknown>): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!existsSync(this.daemonSocketPath)) {
+      return { success: false, error: 'Daemon socket not found' };
+    }
+
+    return new Promise((resolve) => {
+      const client = connect(this.daemonSocketPath);
+      let buffer = '';
+      let settled = false;
+
+      const finish = (response: { success: boolean; data?: any; error?: string }) => {
+        if (settled) return;
+        settled = true;
+        resolve(response);
+        client.end();
+      };
+
+      client.on('error', (error) => finish({ success: false, error: error.message }));
+      client.on('connect', () => {
+        client.write(JSON.stringify({ command, data }) + '\n');
+      });
+      client.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            finish(parsed);
+            return;
+          } catch (error) {
+            finish({ success: false, error: error instanceof Error ? error.message : 'Failed to parse response' });
+            return;
+          }
+        }
+      });
+      client.on('end', () => {
+        if (!settled) {
+          finish({ success: false, error: 'No response from daemon' });
+        }
+      });
+    });
   }
 
   /**
@@ -447,46 +374,6 @@ export class WebServer {
         logger.error('WebSocket broadcast error', { error: error.message });
       }
     }
-  }
-
-  /**
-   * 广播 Agent 事件
-   */
-  broadcastAgentEvent(event: string, data: any): void {
-    this.broadcast({
-      type: 'agent_event',
-      event,
-      data,
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * 广播 Agent 注册事件
-   */
-  broadcastAgentRegistered(agent: any): void {
-    this.broadcastAgentEvent('agent_registered', agent);
-  }
-
-  /**
-   * 广播 Agent 更新事件
-   */
-  broadcastAgentUpdated(agent: any): void {
-    this.broadcastAgentEvent('agent_updated', agent);
-  }
-
-  /**
-   * 广播 Agent 注销事件
-   */
-  broadcastAgentUnregistered(sessionId: string): void {
-    this.broadcastAgentEvent('agent_unregistered', { sessionId });
-  }
-
-  /**
-   * 广播新消息事件
-   */
-  broadcastNewMessage(message: any): void {
-    this.broadcastAgentEvent('new_message', message);
   }
 
   /**

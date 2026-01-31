@@ -1,30 +1,17 @@
 #!/usr/bin/env bun
 /**
- * SessionToolCapture-v2.hook.ts
- * 从 transcript 读取完整的工具输出
+ * SessionToolCapture.hook.ts
+ * 在每次工具调用后记录操作
  *
  * Hook 类型: PostToolUse
- * 触发时机: 工具调用完成后
- * 职责: 记录工具调用的输入、输出和状态
+ * 触发时机: 每次工具调用后
+ * 职责: 捕获工具名称、输入、输出、成功状态，推送到守护进程
  */
 
-import { appendFileSync, existsSync, readFileSync } from 'fs';
-import { createHookLogger } from '../lib/logger.ts';
-import {
-  hookErrorHandler,
-  withTimeout,
-  safeJSONParse,
-  validateRequired,
-  FileSystemError
-} from '../lib/errors.ts';
-import { config } from '../lib/config.ts';
-
-// ============================================================================
-// 初始化
-// ============================================================================
-
-const logger = createHookLogger('SessionToolCapture');
-const cfg = config.get();
+import { connect } from 'net';
+import { appendFileSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
 // ============================================================================
 // 1. 读取 Hook 输入
@@ -38,114 +25,36 @@ const event = JSON.parse(input);
 // ============================================================================
 
 try {
-  const startTime = Date.now();
-
-  // 2.1 验证必需字段
-  const sessionId = validateRequired(event.session_id, 'session_id');
-  const toolName = validateRequired(event.tool_name, 'tool_name');
+  const paiDir = process.env.PAI_DIR || join(homedir(), '.claude');
+  const sessionId = event.session_id;
   const timestamp = new Date().toISOString();
-  const yearMonth = config.getYearMonth();
 
-  // 2.2 定位会话文件
-  const sessionFile = config.getSessionFilePath(sessionId, yearMonth);
-
-  if (!existsSync(sessionFile)) {
-    logger.warn('Session file not found', { sessionFile, sessionId });
-    console.log(JSON.stringify({ continue: true }));
-    process.exit(0);
-  }
-
-  // 2.3 提取工具输出和成功状态
-  let toolOutput = '';
-  let toolSuccess = false;
-
-  // 优先从 tool_response 字段获取（直接可用）
-  if (event.tool_response) {
-    const response = event.tool_response;
-
-    // 合并 stdout 和 stderr
-    const stdout = response.stdout || '';
-    const stderr = response.stderr || '';
-    toolOutput = stdout + (stderr ? '\n[stderr]\n' + stderr : '');
-
-    // 判断成功：没有中断且没有错误
-    toolSuccess = !response.interrupted && !response.is_error;
-
-    logger.debug('Tool output from tool_response', {
-      toolName,
-      outputLength: toolOutput.length,
-      success: toolSuccess,
-    });
-  }
-  // 备用方案：从 transcript 读取
-  else if (event.transcript_path && existsSync(event.transcript_path)) {
-    try {
-      const result = await withTimeout(
-        readToolResultFromTranscript(event.transcript_path, event.tool_use_id),
-        cfg.hookTimeout,
-        'readToolResultFromTranscript'
-      );
-      toolOutput = result.output;
-      toolSuccess = result.success;
-
-      logger.debug('Tool output from transcript', {
-        toolName,
-        outputLength: toolOutput.length,
-        success: toolSuccess,
-      });
-    } catch (error) {
-      logger.warn('Failed to read from transcript', {
-        error: error instanceof Error ? error.message : String(error),
-        transcriptPath: event.transcript_path,
-      });
-    }
-  }
-
-  // 2.4 构建工具事件
+  // 2.1 构建工具事件
   const toolEvent = {
+    hook_name: 'SessionToolCapture',
     event_type: 'tool_use',
     session_id: sessionId,
     timestamp: timestamp,
-    tool_name: toolName,
-    tool_use_id: event.tool_use_id,
-
-    // 工具输入
-    tool_input: event.tool_input || {},
-
-    // 工具输出（截断到配置的最大长度）
-    tool_output: truncateOutput(toolOutput, cfg.maxOutputLength),
-
-    // 状态
-    success: toolSuccess,
-
-    // 额外信息
-    duration_ms: event.duration_ms || null,
+    data: {
+      tool_name: event.tool_name,
+      tool_input: event.tool_input || {},
+      tool_output: truncateOutput(event.tool_output || event.result || event.output || '', 5000),
+      success: event.tool_use_status === 'success' || event.success === true || event.status === 'success',
+      status: event.tool_use_status || event.status || 'unknown',
+      duration_ms: event.duration_ms || null,
+    },
   };
 
-  // 2.5 追加到 JSONL 文件
-  try {
-    appendFileSync(sessionFile, JSON.stringify(toolEvent) + '\n');
-  } catch (error) {
-    throw new FileSystemError(
-      `Failed to append to session file: ${sessionFile}`,
-      sessionFile,
-      'append'
-    );
-  }
+  // 2.2 尝试推送到守护进程
+  const pushed = await pushToDaemon(toolEvent);
 
-  // 2.6 提取文件修改信息
-  if (toolName === 'Edit' || toolName === 'Write') {
-    const filePath = event.tool_input?.file_path;
-    if (filePath) {
-      logger.info('File modified', { filePath, toolName });
-    }
+  // 2.3 如果推送失败，回退到文件写入
+  if (!pushed) {
+    fallbackToFile(toolEvent, paiDir);
   }
-
-  // 2.7 记录性能
-  logger.perf('SessionToolCapture', startTime);
 
 } catch (error) {
-  hookErrorHandler('SessionToolCapture')(error);
+  console.error('[SessionToolCapture] Error:', error);
 }
 
 // ============================================================================
@@ -160,51 +69,81 @@ process.exit(0);
 // ============================================================================
 
 /**
- * 从 transcript 读取工具结果
+ * 推送事件到守护进程
  */
-async function readToolResultFromTranscript(
-  transcriptPath: string,
-  toolUseId: string
-): Promise<{ output: string; success: boolean }> {
-  try {
-    const content = readFileSync(transcriptPath, 'utf-8');
-    const lines = content.trim().split('\n');
+async function pushToDaemon(event: any): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socketPath = '/tmp/claude-daemon.sock';
+    const timeout = 2000; // 2 秒超时
 
-    for (const line of lines) {
-      const entry = safeJSONParse<any>(line, null, 'transcript line');
-      if (!entry) continue;
+    const client = connect(socketPath);
+    let responded = false;
 
-      // 查找 tool_result 消息
-      if (entry.type === 'message' && entry.role === 'user') {
-        for (const block of entry.content || []) {
-          if (block.type === 'tool_result' && block.tool_use_id === toolUseId) {
-            // 提取输出
-            let output = '';
-            if (typeof block.content === 'string') {
-              output = block.content;
-            } else if (Array.isArray(block.content)) {
-              output = block.content
-                .filter(c => c.type === 'text')
-                .map(c => c.text)
-                .join('\n');
-            }
+    // 设置超时
+    const timer = setTimeout(() => {
+      if (!responded) {
+        responded = true;
+        client.destroy();
+        resolve(false);
+      }
+    }, timeout);
 
-            return {
-              output,
-              success: !block.is_error,
-            };
-          }
+    client.on('connect', () => {
+      // 发送事件（以换行符结尾）
+      client.write(JSON.stringify(event) + '\n');
+    });
+
+    client.on('data', (data) => {
+      if (!responded) {
+        responded = true;
+        clearTimeout(timer);
+        client.end();
+
+        try {
+          const response = JSON.parse(data.toString());
+          resolve(response.success === true);
+        } catch {
+          resolve(false);
         }
       }
+    });
+
+    client.on('error', () => {
+      if (!responded) {
+        responded = true;
+        clearTimeout(timer);
+        resolve(false);
+      }
+    });
+  });
+}
+
+/**
+ * 回退到文件写入
+ */
+function fallbackToFile(event: any, paiDir: string): void {
+  try {
+    const yearMonth = event.timestamp.slice(0, 7);
+    const rawDir = join(paiDir, 'SESSIONS/raw', yearMonth);
+    const sessionFile = join(rawDir, `session-${event.session_id}.jsonl`);
+
+    // 确保目录存在
+    if (!existsSync(rawDir)) {
+      mkdirSync(rawDir, { recursive: true });
     }
 
-    return { output: '', success: false };
+    // 转换事件格式为存储格式
+    const storageEvent = {
+      event_type: event.event_type,
+      session_id: event.session_id,
+      timestamp: event.timestamp,
+      ...event.data,
+    };
+
+    // 追加到文件
+    appendFileSync(sessionFile, JSON.stringify(storageEvent) + '\n');
   } catch (error) {
-    logger.error('Error reading transcript', {
-      error: error instanceof Error ? error.message : String(error),
-      transcriptPath,
-    });
-    return { output: '', success: false };
+    console.error('[SessionToolCapture] Fallback write failed:', error);
   }
 }
 
@@ -219,6 +158,7 @@ function truncateOutput(output: any, maxLength: number): any {
     return output;
   }
 
+  // 如果是对象，转为 JSON 后截断
   if (typeof output === 'object' && output !== null) {
     const json = JSON.stringify(output);
     if (json.length > maxLength) {

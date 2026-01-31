@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 /**
  * 守护进程主入口
- * Claude Code Daemon - 完整实现
+ * Claude Code Daemon - 完整实现（支持插件系统）
  */
 
+import { EventEmitter } from 'events';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import { HookServer, HookEvent } from './hook-server.ts';
 import { EventQueue, QueuedEvent } from './event-queue.ts';
 import { StorageService } from './storage-service.ts';
@@ -11,7 +14,9 @@ import { SessionAnalyzer } from './session-analyzer.ts';
 import { Scheduler } from './scheduler.ts';
 import { HealthMonitor } from './health-monitor.ts';
 import { CleanupService } from './cleanup-service.ts';
+import { PluginManager } from './plugin-manager.ts';
 import { createHookLogger } from '../lib/logger.ts';
+import { config } from '../lib/config.ts';
 import WebServer from '../web/server.ts';
 
 const logger = createHookLogger('ClaudeDaemon');
@@ -24,10 +29,20 @@ class ClaudeDaemon {
   private scheduler: Scheduler;
   private healthMonitor: HealthMonitor;
   private cleanupService: CleanupService;
+  private pluginManager: PluginManager;
+  private eventBus: EventEmitter;
   private webServer?: WebServer;
   private running = false;
+  private startTime?: number;
+  private webPort?: number;
+  private webHost?: string;
+  private webEnabled = false;
 
   constructor() {
+    // 初始化事件总线
+    this.eventBus = new EventEmitter();
+    this.eventBus.setMaxListeners(100); // 增加监听器限制
+
     // 初始化服务
     this.hookServer = new HookServer();
     this.eventQueue = new EventQueue();
@@ -37,6 +52,9 @@ class ClaudeDaemon {
     this.healthMonitor = new HealthMonitor();
     this.cleanupService = new CleanupService();
 
+    // 初始化插件管理器（传入 HookServer 以便插件可以注册 IPC 命令）
+    this.pluginManager = new PluginManager(this.storage, this.eventBus, this.hookServer);
+
     // 设置 Hook 事件处理器
     this.setupHookHandlers();
 
@@ -45,6 +63,9 @@ class ClaudeDaemon {
 
     // 设置定时任务
     this.setupScheduledTasks();
+
+    // 注册 IPC 命令
+    this.setupIPCCommands();
   }
 
   /**
@@ -243,8 +264,12 @@ class ClaudeDaemon {
   /**
    * 启动守护进程
    */
-  async start(options?: { enableWebUI?: boolean; webPort?: number }): Promise<void> {
+  async start(options?: { enableWebUI?: boolean; webPort?: number; webHost?: string }): Promise<void> {
     this.running = true;
+    this.startTime = Date.now();
+    this.webEnabled = Boolean(options?.enableWebUI);
+    this.webPort = options?.webPort;
+    this.webHost = options?.webHost;
 
     logger.info('Starting Claude Daemon...');
 
@@ -256,15 +281,24 @@ class ClaudeDaemon {
     this.scheduler.start();
     logger.info('✓ Scheduler started');
 
-    // 3. 启动 Web UI（可选）
-    if (options?.enableWebUI) {
-      const port = options?.webPort || 3000;  
-      this.webServer = new WebServer(port, '127.0.0.1', this.hookServer);
+    // 3. 加载插件
+    await this.loadPlugins();
+
+    // 4. 连接插件命令处理器到 Hook Server
+    this.setupPluginCommandHandlers();
+
+    // 4. 启动 Web UI（可选）
+    if (this.webEnabled) {
+      const port = this.webPort || 3000;
+      const host = this.webHost || '127.0.0.1';
+      this.webPort = port;
+      this.webHost = host;
+      this.webServer = new WebServer(port, host);
       await this.webServer.start();
       logger.info('✓ Web UI started');
     }
 
-    // 4. 执行首次健康检查
+    // 5. 执行首次健康检查
     const health = await this.healthMonitor.check();
     if (health.healthy) {
       logger.info('✓ Initial health check passed');
@@ -274,14 +308,18 @@ class ClaudeDaemon {
       });
     }
 
-    // 5. 设置信号处理
+    // 6. 设置信号处理
     this.setupSignalHandlers();
 
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logger.info('🚀 Claude Daemon started successfully');
     logger.info('   Waiting for hook events...');
     if (this.webServer) {
-      logger.info(`   Web UI: http://127.0.0.1:${options?.webPort || 3000}`);
+      logger.info(`   Web UI: http://${this.webHost || '127.0.0.1'}:${this.webPort || 3000}`);
+    }
+    const plugins = this.pluginManager.listPlugins();
+    if (plugins.length > 0) {
+      logger.info(`   Plugins loaded: ${plugins.map(p => p.name).join(', ')}`);
     }
     logger.info('   Press Ctrl+C to stop');
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -300,21 +338,29 @@ class ClaudeDaemon {
 
     this.running = false;
 
-    // 1. 停止 Web 服务器
+    // 1. 卸载所有插件
+    try {
+      await this.pluginManager.unloadAll();
+      logger.info('✓ Plugins unloaded');
+    } catch (error) {
+      logger.error('Failed to unload plugins', error);
+    }
+
+    // 2. 停止 Web 服务器
     if (this.webServer) {
       await this.webServer.stop();
       logger.info('✓ Web server stopped');
     }
 
-    // 2. 停止调度器
+    // 3. 停止调度器
     this.scheduler.stop();
     logger.info('✓ Scheduler stopped');
 
-    // 3. 停止 Hook Server
+    // 4. 停止 Hook Server
     await this.hookServer.stop();
     logger.info('✓ Hook server stopped');
 
-    // 4. 等待队列清空
+    // 5. 等待队列清空
     const queueStatus = this.eventQueue.getStatus();
     if (queueStatus.queueSize > 0) {
       logger.info(`Waiting for ${queueStatus.queueSize} queued events to process...`);
@@ -340,6 +386,125 @@ class ClaudeDaemon {
   }
 
   /**
+   * 设置插件命令处理器
+   * 插件命令在加载时已自动注册到 Hook Server
+   */
+  private setupPluginCommandHandlers(): void {
+    const plugins = this.pluginManager.listPlugins();
+
+    if (plugins.length === 0) {
+      return;
+    }
+
+    // 插件命令已在 PluginContext.registerIPCCommand() 中自动注册到 HookServer
+    // 这里只需要记录日志
+    logger.info('✓ Plugin command handlers connected');
+  }
+
+  /**
+   * 注册内置 IPC 命令
+   */
+  private setupIPCCommands(): void {
+    this.hookServer.registerCommand('status', async () => {
+      const health = await this.healthMonitor.check();
+      const queueStatus = this.eventQueue.getStatus();
+      const plugins = this.pluginManager.listPlugins();
+      const activeSessions = this.analyzer.getActiveSessionsSummary();
+      const uptimeSeconds = this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0;
+
+      return {
+        success: true,
+        data: {
+          pid: process.pid,
+          running: this.running,
+          uptimeSeconds,
+          web: {
+            enabled: this.webEnabled,
+            port: this.webPort,
+            host: this.webHost,
+          },
+          queue: queueStatus,
+          plugins,
+          activeSessions,
+          health,
+        },
+      };
+    });
+
+    this.hookServer.registerCommand('active_sessions', async () => {
+      return {
+        success: true,
+        data: this.analyzer.getActiveSessionsSummary(),
+      };
+    });
+
+    this.hookServer.registerCommand('active_session', async (request) => {
+      const sessionId = request?.sessionId;
+      if (!sessionId) {
+        return { success: false, error: 'Missing sessionId' };
+      }
+      const session = this.analyzer.getActiveSessionById(sessionId);
+      if (!session) {
+        return { success: false, error: 'Session not found' };
+      }
+      return { success: true, data: session };
+    });
+  }
+
+  /**
+   * 加载插件
+   */
+  private async loadPlugins(): Promise<void> {
+    try {
+      const pluginConfigs = await this.loadPluginConfigs();
+
+      if (pluginConfigs.length === 0) {
+        logger.info('No plugins configured');
+        return;
+      }
+
+      logger.info(`Loading ${pluginConfigs.length} plugin(s)...`);
+
+      for (const pluginConfig of pluginConfigs) {
+        try {
+          await this.pluginManager.loadPlugin(pluginConfig);
+          logger.info(`✓ Plugin loaded: ${pluginConfig.name}`);
+        } catch (error) {
+          logger.error(`✗ Failed to load plugin: ${pluginConfig.name}`);
+          logger.error(`  Error type: ${error?.constructor?.name || typeof error}`);
+          logger.error(`  Error message: ${error instanceof Error ? error.message : String(error)}`);
+          if (error instanceof Error && error.stack) {
+            logger.error(`  Stack trace: ${error.stack}`);
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to load plugin configs', error);
+    }
+  }
+
+  /**
+   * 加载插件配置
+   */
+  private async loadPluginConfigs(): Promise<any[]> {
+    const cfg = config.get();
+    const configPath = join(cfg.paiDir, 'daemon-config.json');
+
+    if (!existsSync(configPath)) {
+      return [];
+    }
+
+    try {
+      const configContent = readFileSync(configPath, 'utf-8');
+      const daemonConfig = JSON.parse(configContent);
+      return daemonConfig.plugins || [];
+    } catch (error) {
+      logger.error('Failed to parse daemon config', error);
+      return [];
+    }
+  }
+
+  /**
    * 获取守护进程状态
    */
   getStatus() {
@@ -348,16 +513,61 @@ class ClaudeDaemon {
       queue: this.eventQueue.getStatus(),
       activeSessions: this.analyzer.getActiveSessionsStatus(),
       scheduler: this.scheduler.getStatus(),
+      plugins: this.pluginManager.listPlugins(),
     };
   }
 }
 
 // 启动守护进程
 if (import.meta.main) {
+  // 解析命令行参数
+  const args = process.argv.slice(2);
+  let enableWebUI = false;
+  let webPort = 3001;  // 默认使用 3001 避免端口冲突
+  let webHost = '127.0.0.1';
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--web' || arg === '-w') {
+      enableWebUI = true;
+    } else if (arg === '--port' || arg === '-p') {
+      const portValue = args[i + 1];
+      if (portValue && !isNaN(parseInt(portValue))) {
+        webPort = parseInt(portValue);
+        i++; // 跳过下一个参数
+      }
+    } else if (arg === '--host' || arg === '-H') {
+      const hostValue = args[i + 1];
+      if (hostValue) {
+        webHost = hostValue;
+        i++; // 跳过下一个参数
+      }
+    } else if (arg === '--help' || arg === '-h') {
+      console.log(`
+Claude Daemon - Background service for Claude Code session recording
+
+Usage:
+  bun daemon/main.ts [options]
+
+Options:
+  --web, -w           Enable Web UI
+  --port, -p <port>   Web UI port (default: 3001)
+  --host, -H <host>   Web UI host (default: 127.0.0.1)
+  --help, -h          Show this help message
+
+Examples:
+  bun daemon/main.ts --web
+  bun daemon/main.ts --web --port 8080
+  bun daemon/main.ts --web --host 0.0.0.0
+      `);
+      process.exit(0);
+    }
+  }
+
   const daemon = new ClaudeDaemon();
 
-  // 默认启用 Web UI，使用端口 3001
-  daemon.start({ enableWebUI: true, webPort: 3001 }).catch((error) => {
+  daemon.start({ enableWebUI, webPort, webHost }).catch((error) => {
     console.error('[ClaudeDaemon] Fatal error:', error);
     process.exit(1);
   });

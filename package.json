@@ -25,9 +25,12 @@
     "claude-daemon": "./bin/cli.js"
   },
   "files": [
+    "daemon/",
     "hooks/",
     "lib/",
     "tools/",
+    "plugins/",
+    "web/",
     "bin/",
     "install.sh",
     "install.ps1",
@@ -38,7 +41,11 @@
     "QUICKSTART.md"
   ],
   "scripts": {
-    "postinstall": "echo '\n🎉 @jhihjian/claude-daemon 安装成功！\n\n使用方法:\n  npx @jhihjian/claude-daemon install\n\n或查看文档:\n  https://github.com/JhihJian/claude-daemon\n'"
+    "postinstall": "echo '\n🎉 @jhihjian/claude-daemon 安装成功！\n\n使用方法:\n  npx @jhihjian/claude-daemon install\n\n或查看文档:\n  https://github.com/JhihJian/claude-daemon\n'",
+    "dev": "bun daemon/main.ts --web --port 3000",
+    "dev:web": "bun web/server.ts",
+    "test": "bun test-plugin-load.ts",
+    "test:daemon": "bash test-daemon.sh"
   },
   "engines": {
     "node": ">=16.0.0"

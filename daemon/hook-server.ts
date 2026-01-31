@@ -3,17 +3,11 @@
  * Hook Server - 接收 Hook 推送的数据
  *
  * 守护进程的一部分，监听 Unix Socket，接收来自 Hook 的事件数据
- * 扩展支持Agent操作（注册、注销、状态更新等）
  */
 
 import { createServer, Server, Socket } from 'net';
-import { existsSync, unlinkSync, mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { existsSync, unlinkSync } from 'fs';
 import { createHookLogger } from '../lib/logger.ts';
-import { AgentRegistry } from './agent-registry.ts';
-import { MessageBroker } from './message-broker.ts';
-import type { AgentInfo } from './types/agent-types';
-import type { TaskCompletionReport } from './types/message-types';
 
 const logger = createHookLogger('HookServer');
 
@@ -25,62 +19,30 @@ export interface HookEvent {
   data: any;
 }
 
+export interface IPCCommand {
+  command: string;
+  sessionId?: string;
+  data?: any;
+}
+
+export interface IPCResponse {
+  success: boolean;
+  data?: any;
+  error?: string;
+}
+
+export type CommandHandler = (request: IPCCommand) => Promise<IPCResponse>;
+
 export class HookServer {
   private server?: Server;
   private socketPath: string;
   private eventHandlers: Map<string, (event: HookEvent) => Promise<void>>;
-  private agentRegistry: AgentRegistry;
-  private messageBroker: MessageBroker;
+  private commandHandlers: Map<string, CommandHandler>;
 
   constructor(socketPath: string = '/tmp/claude-daemon.sock') {
     this.socketPath = socketPath;
     this.eventHandlers = new Map();
-    this.agentRegistry = new AgentRegistry();
-    this.messageBroker = new MessageBroker();
-    this.setupAgentEventHandlers();
-    this.setupMessageHandlers();
-  }
-
-  /**
-   * 设置Agent事件处理器
-   */
-  private setupAgentEventHandlers(): void {
-    this.agentRegistry.on("event", (event) => {
-      logger.debug('Agent event', {
-        type: event.type,
-        sessionId: event.agent.sessionId,
-        label: event.agent.label,
-        status: event.agent.status
-      });
-    });
-  }
-
-  /**
-   * 设置消息处理器
-   */
-  private setupMessageHandlers(): void {
-    this.messageBroker.on("message", (message) => {
-      logger.debug("New message", {
-        from: message.from,
-        to: message.to,
-        type: message.type,
-        id: message.id,
-      });
-    });
-  }
-
-  /**
-   * 获取AgentRegistry实例（供外部访问）
-   */
-  getAgentRegistry(): AgentRegistry {
-    return this.agentRegistry;
-  }
-
-  /**
-   * 获取MessageBroker实例（供外部访问）
-   */
-  getMessageBroker(): MessageBroker {
-    return this.messageBroker;
+    this.commandHandlers = new Map();
   }
 
   /**
@@ -88,6 +50,22 @@ export class HookServer {
    */
   on(eventType: string, handler: (event: HookEvent) => Promise<void>): void {
     this.eventHandlers.set(eventType, handler);
+  }
+
+  /**
+   * 注册命令处理器
+   */
+  registerCommand(commandName: string, handler: CommandHandler): void {
+    this.commandHandlers.set(commandName, handler);
+    logger.debug(`Registered command: ${commandName}`);
+  }
+
+  /**
+   * 取消注册命令处理器
+   */
+  unregisterCommand(commandName: string): void {
+    this.commandHandlers.delete(commandName);
+    logger.debug(`Unregistered command: ${commandName}`);
   }
 
   /**
@@ -154,34 +132,15 @@ export class HookServer {
    */
   private async handleMessage(message: string, socket: Socket): Promise<void> {
     try {
-      const data = JSON.parse(message);
+      const parsed = JSON.parse(message);
 
-      // 检查是否为action操作（Agent操作）
-      if (data.action) {
-        await this.handleAgentAction(data, socket);
-        return;
-      }
-
-      // 原有的Hook事件处理
-      const event: HookEvent = data as HookEvent;
-
-      logger.debug('Received event', {
-        hookName: event.hook_name,
-        eventType: event.event_type,
-        sessionId: event.session_id,
-      });
-
-      // 查找对应的处理器
-      const handler = this.eventHandlers.get(event.event_type);
-
-      if (handler) {
-        await handler(event);
-
-        // 发送成功响应
-        socket.write(JSON.stringify({ success: true }) + '\n');
+      // 区分 IPC 命令和 Hook 事件
+      if ('command' in parsed) {
+        // 处理 IPC 命令
+        await this.handleCommand(parsed as IPCCommand, socket);
       } else {
-        logger.warn('No handler for event type', { eventType: event.event_type });
-        socket.write(JSON.stringify({ success: false, error: 'No handler' }) + '\n');
+        // 处理 Hook 事件
+        await this.handleEvent(parsed as HookEvent, socket);
       }
     } catch (error) {
       logger.error('Failed to process message', {
@@ -197,197 +156,51 @@ export class HookServer {
   }
 
   /**
-   * 处理Agent相关操作
+   * 处理 Hook 事件
    */
-  private async handleAgentAction(data: any, socket: Socket): Promise<void> {
-    const { action, session_id, type, label, config, working_dir, parent_id, status } = data;
+  private async handleEvent(event: HookEvent, socket: Socket): Promise<void> {
+    logger.debug('Received event', {
+      hookName: event.hook_name,
+      eventType: event.event_type,
+      sessionId: event.session_id,
+    });
 
-    try {
-      let result: any = { success: false };
+    // 查找对应的处理器
+    const handler = this.eventHandlers.get(event.event_type);
 
-      switch (action) {
-        case "register_agent": {
-          const agent = this.agentRegistry.register({
-            sessionId: session_id,
-            type: type || "master",
-            label: label || `${type}-${session_id.slice(0, 8)}`,
-            agentConfig: config || "default",
-            workingDir: working_dir || process.cwd(),
-            parentId: parent_id,
-          });
-          result = { success: true, agent };
-          break;
-        }
+    if (handler) {
+      await handler(event);
 
-        case "unregister_agent": {
-          const unregistered = this.agentRegistry.unregister(session_id);
-          result = { success: unregistered };
-          break;
-        }
-
-        case "update_agent_status": {
-          const updated = this.agentRegistry.updateStatus(session_id, status);
-          result = { success: !!updated, agent: updated };
-          break;
-        }
-
-        case "agent_heartbeat": {
-          const updated = this.agentRegistry.heartbeat(session_id);
-          result = { success: !!updated, agent: updated };
-          break;
-        }
-
-        case "get_agent": {
-          const agent = this.agentRegistry.get(session_id);
-          result = { success: true, agent };
-          break;
-        }
-
-        case "list_agents": {
-          const query: any = {};
-          if (data.type) query.type = data.type;
-          if (data.status) query.status = data.status;
-          if (data.parent_id) query.parentId = data.parent_id;
-          if (data.config) query.agentConfig = data.config;
-
-          const agents = this.agentRegistry.query(query);
-          result = { success: true, agents };
-          break;
-        }
-
-        case "get_all_agents": {
-          const agents = this.agentRegistry.getAll();
-          result = { success: true, agents };
-          break;
-        }
-
-        // ===== 消息操作 =====
-        case "send_message": {
-          const message = this.messageBroker.send({
-            from: data.from,
-            to: data.to,
-            type: data.type || "task",
-            content: data.content,
-            metadata: data.metadata,
-            replyTo: data.reply_to,
-          });
-          result = { success: true, message };
-          break;
-        }
-
-        case "get_messages": {
-          const sessionId = data.session_id;
-          const unreadOnly = data.unread_only;
-
-          let messages;
-          if (unreadOnly) {
-            messages = this.messageBroker.getUnreadMessages(sessionId);
-          } else {
-            messages = this.messageBroker.getMessages(sessionId);
-          }
-
-          result = { success: true, messages };
-          break;
-        }
-
-        case "mark_messages_read": {
-          const messageIds = data.message_ids || [];
-          let allMarked = true;
-
-          for (const id of messageIds) {
-            const marked = this.messageBroker.markAsRead(id);
-            if (!marked) allMarked = false;
-          }
-
-          result = { success: allMarked };
-          break;
-        }
-
-        case "query_messages": {
-          const queryOptions: any = {};
-          if (data.type) queryOptions.type = data.type;
-          if (data.status) queryOptions.status = data.status;
-          if (data.limit) queryOptions.limit = data.limit;
-          if (data.since) queryOptions.since = data.since;
-
-          const messages = this.messageBroker.query(queryOptions);
-          result = { success: true, messages };
-          break;
-        }
-
-        case "delete_message": {
-          const deleted = this.messageBroker.deleteMessage(data.message_id);
-          result = { success: deleted };
-          break;
-        }
-
-        case "task_completion": {
-          const report: TaskCompletionReport = {
-            sessionId: data.session_id,
-            taskId: data.report.task_id,
-            status: data.report.status,
-            result: data.report.result,
-            error: data.report.error,
-            duration: data.report.duration,
-            timestamp: Date.now(),
-          };
-
-          // 保存任务结果
-          await this.saveTaskResult(report);
-
-          // 更新Agent状态为idle
-          this.agentRegistry.updateStatus(data.session_id, "idle");
-
-          // 如果有父Agent，发送消息通知
-          const agent = this.agentRegistry.get(data.session_id);
-          if (agent?.parentId) {
-            this.messageBroker.send({
-              from: data.session_id,
-              to: agent.parentId,
-              type: "result",
-              content: `Task ${report.taskId} completed with status: ${report.status}`,
-              metadata: { report },
-            });
-          }
-
-          result = { success: true };
-          break;
-        }
-
-        default:
-          result = { success: false, error: "Unknown action" };
-      }
-
-      socket.write(JSON.stringify(result) + "\n");
-    } catch (error) {
-      socket.write(JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }) + "\n");
+      // 发送成功响应
+      socket.write(JSON.stringify({ success: true }) + '\n');
+    } else {
+      logger.warn('No handler for event type', { eventType: event.event_type });
+      socket.write(JSON.stringify({ success: false, error: 'No handler' }) + '\n');
     }
   }
 
   /**
-   * 保存任务结果
+   * 处理 IPC 命令
    */
-  private async saveTaskResult(report: TaskCompletionReport): Promise<void> {
-    const taskDir = join(process.env.HOME || "", ".claude/AGENT_TASKS", report.taskId);
-    mkdirSync(taskDir, { recursive: true });
+  private async handleCommand(command: IPCCommand, socket: Socket): Promise<void> {
+    logger.debug('Received command', {
+      command: command.command,
+      sessionId: command.sessionId,
+    });
 
-    const resultFile = join(taskDir, `${report.sessionId}.md`);
-    writeFileSync(resultFile, report.result, "utf-8");
+    // 查找对应的命令处理器
+    const handler = this.commandHandlers.get(command.command);
 
-    // 保存元数据
-    const metaFile = join(taskDir, "meta.json");
-    const meta = {
-      taskId: report.taskId,
-      sessionId: report.sessionId,
-      status: report.status,
-      error: report.error,
-      duration: report.duration,
-      timestamp: report.timestamp,
-    };
-    writeFileSync(metaFile, JSON.stringify(meta, null, 2), "utf-8");
+    if (handler) {
+      const response = await handler(command);
+      socket.write(JSON.stringify(response) + '\n');
+    } else {
+      logger.warn('No handler for command', { command: command.command });
+      socket.write(JSON.stringify({
+        success: false,
+        error: `Unknown command: ${command.command}`
+      }) + '\n');
+    }
   }
 
   /**
@@ -404,17 +217,9 @@ export class HookServer {
             unlinkSync(this.socketPath);
           }
 
-          // 清理Agent注册表
-          this.agentRegistry.destroy();
-
-          // 清理消息代理
-          this.messageBroker.destroy();
-
           resolve();
         });
       } else {
-        this.agentRegistry.destroy();
-        this.messageBroker.destroy();
         resolve();
       }
     });

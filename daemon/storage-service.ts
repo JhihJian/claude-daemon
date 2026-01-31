@@ -267,6 +267,16 @@ export class StorageService {
         metadata = safeJSONParse(content, metadata, 'global metadata');
       }
 
+      if (!metadata.sessions_by_type) {
+        metadata.sessions_by_type = {};
+      }
+      if (!metadata.sessions_by_directory) {
+        metadata.sessions_by_directory = {};
+      }
+      if (!metadata.sessions_by_hostname) {
+        metadata.sessions_by_hostname = {};
+      }
+
       // 更新统计
       metadata.total_sessions += 1;
       metadata.sessions_by_type[summary.session_type] =
