@@ -11,9 +11,33 @@ import { safeJSONParse } from '../lib/errors.ts';
 const DAEMON_SOCKET = '/tmp/claude-daemon.sock';
 const PUSH_TIMEOUT = 2000;
 
-// 读取 Hook 输入
-const input = await Bun.stdin.text();
-const event = JSON.parse(input);
+// 读取 Hook 输入 - 添加错误处理
+let input: string;
+let event: any;
+
+try {
+  input = await Bun.stdin.text();
+
+  // 处理空输入
+  if (!input || input.trim() === '') {
+    console.error('[SessionAnalyzer] Warning: Empty stdin received, skipping');
+    console.log(JSON.stringify({ continue: true }));
+    process.exit(0);
+  }
+
+  event = JSON.parse(input);
+
+  // 验证必需字段
+  if (!event.session_id) {
+    console.error('[SessionAnalyzer] Warning: Missing session_id in input');
+    console.log(JSON.stringify({ continue: true }));
+    process.exit(0);
+  }
+} catch (error) {
+  console.error('[SessionAnalyzer] Error parsing input:', error instanceof Error ? error.message : String(error));
+  console.log(JSON.stringify({ continue: true }));
+  process.exit(0);
+}
 
 const sessionId = event.session_id;
 const timestamp = new Date().toISOString();

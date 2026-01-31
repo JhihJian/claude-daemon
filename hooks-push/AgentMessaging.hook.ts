@@ -133,10 +133,19 @@ function formatMessage(message: AgentMessage): string {
  * 主处理逻辑
  */
 async function main() {
-  const input = await Bun.stdin.text();
-
+  // 读取输入 - 添加错误处理
+  let input: string;
   let event: HookEvent;
+
   try {
+    input = await Bun.stdin.text();
+
+    // 处理空输入
+    if (!input || input.trim() === '') {
+      console.log(JSON.stringify({ continue: true }));
+      process.exit(0);
+    }
+
     event = JSON.parse(input);
   } catch {
     // 忽略解析错误，继续执行

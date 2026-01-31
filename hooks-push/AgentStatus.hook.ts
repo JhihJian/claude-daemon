@@ -75,15 +75,32 @@ async function sendToDaemon(action: string, data: Record<string, any>): Promise<
  * 主处理逻辑
  */
 async function main() {
-  // 读取输入
-  const input = await Bun.stdin.text();
+  // 读取输入 - 添加错误处理
+  let input: string;
   let event: HookEvent;
 
   try {
+    input = await Bun.stdin.text();
+
+    // 处理空输入
+    if (!input || input.trim() === '') {
+      console.error('[AgentStatus] Warning: Empty stdin received, skipping');
+      console.log(JSON.stringify({ continue: true }));
+      process.exit(0);
+    }
+
     event = JSON.parse(input);
+
+    // 验证必需字段
+    if (!event.session_id) {
+      console.error('[AgentStatus] Warning: Missing session_id in input');
+      console.log(JSON.stringify({ continue: true }));
+      process.exit(0);
+    }
   } catch (e) {
-    console.error("Failed to parse input:", e);
-    process.exit(1);
+    console.error('[AgentStatus] Error parsing input:', e instanceof Error ? e.message : String(e));
+    console.log(JSON.stringify({ continue: true }));
+    process.exit(0);
   }
 
   // 读取Agent配置环境变量
