@@ -175,9 +175,11 @@ echo '{"session_id":"test","event_type":"session_start"}' | bun hooks-push/Sessi
 ## 📚 更多信息
 
 - 完整文档: [CLAUDE.md](./CLAUDE.md)
-- 测试报告: [COMPREHENSIVE-TESTING-COMPLETE.md](./COMPREHENSIVE-TESTING-COMPLETE.md)
+- 测试报告: [综合测试报告](./docs/testing-reports/COMPREHENSIVE-TESTING-COMPLETE.md)
 - 更新日志: [CHANGELOG.md](./CHANGELOG.md)
-- Windows 支持: [BUG-002-IMPLEMENTATION.md](./BUG-002-IMPLEMENTATION.md)
+- Windows 支持: [Windows IPC 实现](./docs/testing-reports/BUG-002-IMPLEMENTATION.md)
+- 用户指南: [Daemon 使用指南](./docs/guides/DAEMON-GUIDE.md)
+- 文档索引: [docs/README.md](./docs/README.md)
 
 ---
 
