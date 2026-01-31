@@ -7,10 +7,13 @@
  */
 
 import { createServer, Server, Socket } from 'net';
-import { existsSync, unlinkSync } from 'fs';
+import { existsSync, unlinkSync, mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { createHookLogger } from '../lib/logger.ts';
 import { AgentRegistry } from './agent-registry.ts';
+import { MessageBroker } from './message-broker.ts';
 import type { AgentInfo } from './types/agent-types';
+import type { TaskCompletionReport } from './types/message-types';
 
 const logger = createHookLogger('HookServer');
 
@@ -27,12 +30,15 @@ export class HookServer {
   private socketPath: string;
   private eventHandlers: Map<string, (event: HookEvent) => Promise<void>>;
   private agentRegistry: AgentRegistry;
+  private messageBroker: MessageBroker;
 
   constructor(socketPath: string = '/tmp/claude-daemon.sock') {
     this.socketPath = socketPath;
     this.eventHandlers = new Map();
     this.agentRegistry = new AgentRegistry();
+    this.messageBroker = new MessageBroker();
     this.setupAgentEventHandlers();
+    this.setupMessageHandlers();
   }
 
   /**
@@ -50,10 +56,31 @@ export class HookServer {
   }
 
   /**
+   * 设置消息处理器
+   */
+  private setupMessageHandlers(): void {
+    this.messageBroker.on("message", (message) => {
+      logger.debug("New message", {
+        from: message.from,
+        to: message.to,
+        type: message.type,
+        id: message.id,
+      });
+    });
+  }
+
+  /**
    * 获取AgentRegistry实例（供外部访问）
    */
   getAgentRegistry(): AgentRegistry {
     return this.agentRegistry;
+  }
+
+  /**
+   * 获取MessageBroker实例（供外部访问）
+   */
+  getMessageBroker(): MessageBroker {
+    return this.messageBroker;
   }
 
   /**
@@ -234,6 +261,99 @@ export class HookServer {
           break;
         }
 
+        // ===== 消息操作 =====
+        case "send_message": {
+          const message = this.messageBroker.send({
+            from: data.from,
+            to: data.to,
+            type: data.type || "task",
+            content: data.content,
+            metadata: data.metadata,
+            replyTo: data.reply_to,
+          });
+          result = { success: true, message };
+          break;
+        }
+
+        case "get_messages": {
+          const sessionId = data.session_id;
+          const unreadOnly = data.unread_only;
+
+          let messages;
+          if (unreadOnly) {
+            messages = this.messageBroker.getUnreadMessages(sessionId);
+          } else {
+            messages = this.messageBroker.getMessages(sessionId);
+          }
+
+          result = { success: true, messages };
+          break;
+        }
+
+        case "mark_messages_read": {
+          const messageIds = data.message_ids || [];
+          let allMarked = true;
+
+          for (const id of messageIds) {
+            const marked = this.messageBroker.markAsRead(id);
+            if (!marked) allMarked = false;
+          }
+
+          result = { success: allMarked };
+          break;
+        }
+
+        case "query_messages": {
+          const queryOptions: any = {};
+          if (data.type) queryOptions.type = data.type;
+          if (data.status) queryOptions.status = data.status;
+          if (data.limit) queryOptions.limit = data.limit;
+          if (data.since) queryOptions.since = data.since;
+
+          const messages = this.messageBroker.query(queryOptions);
+          result = { success: true, messages };
+          break;
+        }
+
+        case "delete_message": {
+          const deleted = this.messageBroker.deleteMessage(data.message_id);
+          result = { success: deleted };
+          break;
+        }
+
+        case "task_completion": {
+          const report: TaskCompletionReport = {
+            sessionId: data.session_id,
+            taskId: data.report.task_id,
+            status: data.report.status,
+            result: data.report.result,
+            error: data.report.error,
+            duration: data.report.duration,
+            timestamp: Date.now(),
+          };
+
+          // 保存任务结果
+          await this.saveTaskResult(report);
+
+          // 更新Agent状态为idle
+          this.agentRegistry.updateStatus(data.session_id, "idle");
+
+          // 如果有父Agent，发送消息通知
+          const agent = this.agentRegistry.get(data.session_id);
+          if (agent?.parentId) {
+            this.messageBroker.send({
+              from: data.session_id,
+              to: agent.parentId,
+              type: "result",
+              content: `Task ${report.taskId} completed with status: ${report.status}`,
+              metadata: { report },
+            });
+          }
+
+          result = { success: true };
+          break;
+        }
+
         default:
           result = { success: false, error: "Unknown action" };
       }
@@ -245,6 +365,29 @@ export class HookServer {
         error: error instanceof Error ? error.message : String(error),
       }) + "\n");
     }
+  }
+
+  /**
+   * 保存任务结果
+   */
+  private async saveTaskResult(report: TaskCompletionReport): Promise<void> {
+    const taskDir = join(process.env.HOME || "", ".claude/AGENT_TASKS", report.taskId);
+    mkdirSync(taskDir, { recursive: true });
+
+    const resultFile = join(taskDir, `${report.sessionId}.md`);
+    writeFileSync(resultFile, report.result, "utf-8");
+
+    // 保存元数据
+    const metaFile = join(taskDir, "meta.json");
+    const meta = {
+      taskId: report.taskId,
+      sessionId: report.sessionId,
+      status: report.status,
+      error: report.error,
+      duration: report.duration,
+      timestamp: report.timestamp,
+    };
+    writeFileSync(metaFile, JSON.stringify(meta, null, 2), "utf-8");
   }
 
   /**
@@ -264,10 +407,14 @@ export class HookServer {
           // 清理Agent注册表
           this.agentRegistry.destroy();
 
+          // 清理消息代理
+          this.messageBroker.destroy();
+
           resolve();
         });
       } else {
         this.agentRegistry.destroy();
+        this.messageBroker.destroy();
         resolve();
       }
     });
