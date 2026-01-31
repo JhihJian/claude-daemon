@@ -47,7 +47,7 @@ Claude Code 会话历史系统已成功改造为**真正的守护线程（Daemon
 
 | 文档 | 内容 | 位置 |
 |------|------|------|
-| `DAEMON-GUIDE.md` | 完整使用指南 | 完整实现 ✓ |
+| `guides/DAEMON-GUIDE.md` | 完整使用指南 | 完整实现 ✓ |
 
 ---
 
@@ -192,7 +192,7 @@ claude-history/
 │   └── com.claudecode.daemon.plist # launchd 配置 ✓
 │
 ├── install-daemon.sh             # 安装脚本 ✓
-└── DAEMON-GUIDE.md               # 使用指南 ✓
+└── guides/DAEMON-GUIDE.md               # 使用指南 ✓
 ```
 
 ---

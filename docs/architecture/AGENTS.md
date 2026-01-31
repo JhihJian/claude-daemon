@@ -35,7 +35,7 @@
 
 ## Configuration & Security Tips
 - `daemon-config.example.json` is the template; avoid committing secrets in `daemon-config.json`.
-- Hook and daemon sockets/paths are local-only; document changes in `README.md` or `DAEMON-GUIDE.md`.
+- Hook and daemon sockets/paths are local-only; document changes in `README.md` or `guides/DAEMON-GUIDE.md`.
 
 ## Agent Notes
 - Review `CLAUDE.md` for operational constraints and storage formats before changing daemon internals.

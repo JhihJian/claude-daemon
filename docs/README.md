@@ -44,9 +44,6 @@ Legacy documentation (historical reference):
 - **WINDOWS-INSTALL.md** - Windows installation (legacy)
 - **WINDOWS-ISSUES.md** - Windows issues (legacy)
 - **WINDOWS-QUICKSTART.md** - Windows quick start (legacy)
-- **HOOK-TEST-REPORT.md** - Hook testing report
-- **INTEGRATION-FIX-SUMMARY.md** - Integration fix summary
-- **INTEGRATION-REPORT.md** - Integration report
 
 ### `/testing-reports` - 测试报告
 Comprehensive testing documentation from v1.3.4 development:
