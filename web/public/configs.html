@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Config Manager</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Courier New', 'Consolas', monospace;
+      background: #0a0a0a;
+      color: #c9c9c9;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* Navigation */
+    .nav {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 20px;
+    }
+
+    .nav a {
+      color: #666666;
+      text-decoration: none;
+      padding: 8px 16px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border: 1px solid transparent;
+    }
+
+    .nav a:hover, .nav a.active {
+      color: #ffb000;
+      border-color: #1a1a1a;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .header-left h1 {
+      color: #ffb000;
+      font-size: 20px;
+      font-weight: normal;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .header-left .subtitle {
+      color: #666666;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    button {
+      background: #0f0f0f;
+      color: #c9c9c9;
+      border: 1px solid #1a1a1a;
+      padding: 8px 16px;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #1a1a1a;
+    }
+
+    .btn-primary {
+      border-color: #33ff33;
+      color: #33ff33;
+    }
+
+    .btn-primary:hover {
+      background: #33ff33;
+      color: #0a0a0a;
+    }
+
+    .btn-danger {
+      border-color: #ff3333;
+      color: #ff3333;
+    }
+
+    .btn-danger:hover {
+      background: #ff3333;
+      color: #0a0a0a;
+    }
+
+    /* Config Grid */
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 15px;
+    }
+
+    .config-card {
+      background: #0f0f0f;
+      border: 1px solid #1a1a1a;
+      padding: 15px;
+      transition: border-color 0.2s;
+    }
+
+    .config-card:hover {
+      border-color: #ffb000;
+    }
+
+    .config-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .config-name {
+      font-size: 14px;
+      color: #ffb000;
+    }
+
+    .config-path {
+      font-size: 10px;
+      color: #666666;
+      margin-top: 4px;
+    }
+
+    .config-status {
+      display: flex;
+      gap: 5px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .status-dot.ok {
+      background: #33ff33;
+    }
+
+    .status-dot.missing {
+      background: #666666;
+    }
+
+    .config-info {
+      font-size: 11px;
+      color: #666666;
+      line-height: 1.8;
+      margin-bottom: 12px;
+    }
+
+    .config-info-row {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .config-actions {
+      display: flex;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid #1a1a1a;
+    }
+
+    .config-actions button {
+      flex: 1;
+      padding: 5px 10px;
+      font-size: 10px;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: #666666;
+      background: #0f0f0f;
+      border: 1px solid #1a1a1a;
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 20px;
+      color: #333333;
+    }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: #666666;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #1a1a1a;
+      border-top-color: #ffb000;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: #0f0f0f;
+      border: 1px solid #1a1a1a;
+      padding: 20px;
+      min-width: 500px;
+      max-width: 800px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .modal-title {
+      color: #ffb000;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: #666666;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .modal-body {
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #1a1a1a;
+    }
+
+    /* Config Detail */
+    .config-detail-section {
+      margin-bottom: 20px;
+    }
+
+    .config-detail-section h4 {
+      color: #ffb000;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .config-json {
+      background: #0a0a0a;
+      border: 1px solid #1a1a1a;
+      padding: 15px;
+      font-size: 11px;
+      overflow-x: auto;
+    }
+
+    .config-claude-md {
+      background: #0a0a0a;
+      border: 1px solid #1a1a1a;
+      padding: 15px;
+      font-size: 12px;
+      line-height: 1.6;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    /* Upload Form */
+    .upload-form {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .form-group label {
+      color: #666666;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      background: #0a0a0a;
+      border: 1px solid #1a1a1a;
+      color: #c9c9c9;
+      padding: 10px;
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #ffb000;
+    }
+
+    .form-group textarea {
+      min-height: 150px;
+      resize: vertical;
+    }
+
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 2000;
+    }
+
+    .toast {
+      background: #0f0f0f;
+      border: 1px solid #1a1a1a;
+      padding: 12px 20px;
+      margin-top: 10px;
+      font-size: 11px;
+      animation: slideIn 0.2s ease;
+    }
+
+    .toast.success {
+      border-color: #33ff33;
+      color: #33ff33;
+    }
+
+    .toast.error {
+      border-color: #ff3333;
+      color: #ff3333;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Navigation -->
+    <nav class="nav">
+      <a href="/sessions.html">Sessions</a>
+      <a href="/agents.html">Agents</a>
+      <a href="/configs.html" class="active">Configs</a>
+    </nav>
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <h1>Config Manager</h1>
+        <p class="subtitle">Manage agent configuration packages</p>
+      </div>
+      <div>
+        <button class="btn-primary" onclick="showUploadModal()">[+] Upload Config</button>
+        <button onclick="loadConfigs()">[R] Refresh</button>
+      </div>
+    </div>
+
+    <!-- Config Grid -->
+    <div id="config-grid" class="config-grid">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p style="margin-top: 10px;">Loading configurations...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- View Config Modal -->
+  <div id="view-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="view-modal-title">Config Details</h3>
+        <button class="modal-close" onclick="closeViewModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="view-modal-body"></div>
+      <div class="modal-footer">
+        <button onclick="closeViewModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload Modal -->
+  <div id="upload-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Upload Config Package</h3>
+        <button class="modal-close" onclick="closeUploadModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="upload-form">
+          <div class="form-group">
+            <label>Package Name</label>
+            <input type="text" id="upload-name" placeholder="e.g., my-custom-agent">
+          </div>
+          <div class="form-group">
+            <label>CLAUDE.md (System Prompt)</label>
+            <textarea id="upload-claude-md" placeholder="# Agent Instructions..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Config JSON (optional)</label>
+            <textarea id="upload-config-json" placeholder='{"agentType": "worker", "capabilities": [...]}'></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeUploadModal()">Cancel</button>
+        <button class="btn-primary" onclick="uploadConfig()">Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    const DAEMON_API = 'http://127.0.0.1:3000/api';
+    let allConfigs = [];
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadConfigs();
+    });
+
+    // Load configs
+    async function loadConfigs() {
+      try {
+        const response = await fetch(`${DAEMON_API}/configs`);
+        if (!response.ok) {
+          throw new Error('Failed to load configs');
+        }
+        allConfigs = await response.json();
+        renderConfigs(allConfigs);
+      } catch (error) {
+        console.error('Error loading configs:', error);
+        document.getElementById('config-grid').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">[!]</div>
+            <h3>Failed to load configs</h3>
+            <p style="margin-top: 10px;">Is the Daemon running?</p>
+          </div>
+        `;
+      }
+    }
+
+    // Render config cards
+    function renderConfigs(configs) {
+      const grid = document.getElementById('config-grid');
+
+      if (!configs || configs.length === 0) {
+        grid.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">[ ]</div>
+            <h3>No config packages found</h3>
+            <p style="margin-top: 10px;">Upload a config package to get started.</p>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = configs.map(config => createConfigCard(config)).join('');
+    }
+
+    // Create config card HTML
+    function createConfigCard(config) {
+      return `
+        <div class="config-card" data-name="${config.name}">
+          <div class="config-header">
+            <div>
+              <div class="config-name">${escapeHtml(config.name)}</div>
+              <div class="config-path">${escapeHtml(config.path)}</div>
+            </div>
+            <div class="config-status">
+              <div class="status-dot ${config.hasClaudeMd ? 'ok' : 'missing'}" title="CLAUDE.md"></div>
+              <div class="status-dot ${config.hasConfig ? 'ok' : 'missing'}" title="config.json"></div>
+            </div>
+          </div>
+          <div class="config-info">
+            <div class="config-info-row">
+              <span>CLAUDE.md:</span>
+              <span>${config.hasClaudeMd ? '✓ Present' : '✗ Missing'}</span>
+            </div>
+            <div class="config-info-row">
+              <span>config.json:</span>
+              <span>${config.hasConfig ? '✓ Present' : '✗ Missing'}</span>
+            </div>
+          </div>
+          <div class="config-actions">
+            <button class="btn-primary" onclick="viewConfig('${config.name}')">View</button>
+            <button onclick="editConfig('${config.name}')">Edit</button>
+            <button class="btn-danger" onclick="deleteConfig('${config.name}')">Delete</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // View config
+    async function viewConfig(name) {
+      try {
+        const response = await fetch(`${DAEMON_API}/configs/${name}`);
+        if (!response.ok) {
+          throw new Error('Failed to load config');
+        }
+        const config = await response.json();
+
+        let html = `
+          <div class="config-detail-section">
+            <h4>Package: ${escapeHtml(config.name)}</h4>
+          </div>
+        `;
+
+        if (config.config) {
+          html += `
+            <div class="config-detail-section">
+              <h4>Config.json</h4>
+              <div class="config-json">${syntaxHighlight(JSON.stringify(config.config, null, 2))}</div>
+            </div>
+          `;
+        }
+
+        if (config.claudeMd) {
+          html += `
+            <div class="config-detail-section">
+              <h4>CLAUDE.md</h4>
+              <div class="config-claude-md">${escapeHtml(config.claudeMd)}</div>
+            </div>
+          `;
+        }
+
+        document.getElementById('view-modal-body').innerHTML = html;
+        document.getElementById('view-modal').classList.add('active');
+      } catch (error) {
+        console.error('Error viewing config:', error);
+        showToast('Failed to load config details', 'error');
+      }
+    }
+
+    // Edit config
+    function editConfig(name) {
+      showToast('Edit feature coming soon', 'error');
+    }
+
+    // Delete config
+    function deleteConfig(name) {
+      showModal(
+        'Delete Config Package',
+        `
+          <p>Are you sure you want to delete the config package <strong>${escapeHtml(name)}</strong>?</p>
+          <p style="color: #ff3333; margin-top: 10px; font-size: 11px;">
+            This action cannot be undone.
+          </p>
+        `,
+        `
+          <button onclick="closeModal()">Cancel</button>
+          <button class="btn-danger" onclick="confirmDeleteConfig('${name}')">Delete</button>
+        `
+      );
+    }
+
+    // Confirm delete config
+    async function confirmDeleteConfig(name) {
+      closeModal();
+      showToast('Delete feature requires server-side implementation', 'error');
+    }
+
+    // Show upload modal
+    function showUploadModal() {
+      document.getElementById('upload-name').value = '';
+      document.getElementById('upload-claude-md').value = '';
+      document.getElementById('upload-config-json').value = '';
+      document.getElementById('upload-modal').classList.add('active');
+    }
+
+    // Close upload modal
+    function closeUploadModal() {
+      document.getElementById('upload-modal').classList.remove('active');
+    }
+
+    // Upload config
+    async function uploadConfig() {
+      const name = document.getElementById('upload-name').value.trim();
+      const claudeMd = document.getElementById('upload-claude-md').value;
+      const configJson = document.getElementById('upload-config-json').value;
+
+      if (!name) {
+        showToast('Please enter a package name', 'error');
+        return;
+      }
+
+      if (!claudeMd) {
+        showToast('Please provide CLAUDE.md content', 'error');
+        return;
+      }
+
+      // For now, just show success (would need server endpoint)
+      closeUploadModal();
+      showToast('Upload feature requires server-side implementation', 'error');
+    }
+
+    // Close view modal
+    function closeViewModal() {
+      document.getElementById('view-modal').classList.remove('active');
+    }
+
+    // Generic modal
+    function showModal(title, body, footer) {
+      document.getElementById('view-modal-title').textContent = title;
+      document.getElementById('view-modal-body').innerHTML = body;
+      document.getElementById('view-modal').querySelector('.modal-footer').innerHTML = footer;
+      document.getElementById('view-modal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('view-modal').classList.remove('active');
+    }
+
+    // Toast notification
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.remove();
+      }, 3000);
+    }
+
+    // Syntax highlight for JSON
+    function syntaxHighlight(json) {
+      json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        let cls = 'number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'key';
+          } else {
+            cls = 'string';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'boolean';
+        } else if (/null/.test(match)) {
+          cls = 'null';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Close modals on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          overlay.classList.remove('active');
+        }
+      });
+    });
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.active').forEach(modal => {
+          modal.classList.remove('active');
+        });
+      }
+    });
+  </script>
+</body>
+</html>
