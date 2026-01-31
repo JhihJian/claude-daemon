@@ -6,6 +6,7 @@
  * Uses direct reference to HookServer instead of Socket connection.
  */
 
+import { join } from 'path';
 import type { HookServer } from '../../daemon/hook-server';
 import type { AgentRegistry } from '../../daemon/agent-registry';
 import type { MessageBroker } from '../../daemon/message-broker';
