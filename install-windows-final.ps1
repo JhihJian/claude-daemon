@@ -154,11 +154,13 @@ if (Test-Path $SettingsFile) {
 $HookRecorder = Join-Path $HooksTargetDir "SessionRecorder.hook.ts"
 $HookCapture = Join-Path $HooksTargetDir "SessionToolCapture-v2.hook.ts"
 $HookAnalyzer = Join-Path $HooksTargetDir "SessionAnalyzer.hook.ts"
+$HookTracker = Join-Path $HooksTargetDir "SessionTracker.hook.ts"
 
 # 转换为 JSON 格式的路径（替换反斜杠）
 $HookRecorderJson = $HookRecorder.Replace('\', '\\')
 $HookCaptureJson = $HookCapture.Replace('\', '\\')
 $HookAnalyzerJson = $HookAnalyzer.Replace('\', '\\')
+$HookTrackerJson = $HookTracker.Replace('\', '\\')
 
 # 转换 Bun 路径为 JSON 格式
 $BunPathJson = $BunPath.Replace('\', '\\')
@@ -175,6 +177,10 @@ $SettingsJson = @"
           {
             "type": "command",
             "command": "bun $HookRecorderJson"
+          },
+          {
+            "type": "command",
+            "command": "bun $HookTrackerJson"
           }
         ]
       }
@@ -195,6 +201,10 @@ $SettingsJson = @"
           {
             "type": "command",
             "command": "bun $HookAnalyzerJson"
+          },
+          {
+            "type": "command",
+            "command": "bun $HookTrackerJson"
           }
         ]
       }

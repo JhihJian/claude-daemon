@@ -120,6 +120,10 @@ cat > "$SETTINGS_FILE" << EOF
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/SessionRecorder.hook.ts"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/SessionTracker.hook.ts"
           }
         ]
       }
@@ -140,6 +144,10 @@ cat > "$SETTINGS_FILE" << EOF
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/SessionAnalyzer.hook.ts"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/SessionTracker.hook.ts"
           }
         ]
       }
