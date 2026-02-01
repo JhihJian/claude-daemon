@@ -34,8 +34,7 @@
     "bin/",
     "install.sh",
     "install-windows-final.ps1",
-    "README.md",
-    "QUICKSTART.md"
+    "README.md"
   ],
   "scripts": {
     "postinstall": "echo '\n🎉 @jhihjian/claude-daemon 安装成功！\n\n使用方法:\n  npx @jhihjian/claude-daemon install\n\n或查看文档:\n  https://github.com/JhihJian/claude-daemon\n'",

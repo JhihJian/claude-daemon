@@ -11,10 +11,7 @@ Technical architecture and design documents:
 ### `/guides` - 用户指南
 User guides and how-to documentation:
 - **DAEMON-GUIDE.md** - Daemon usage guide
-- **PUSH-GUIDE.md** - Push mode guide
-- **SYNC-GUIDE.md** - Synchronization guide
 - **WEB-UI-GUIDE.md** - Web UI user guide
-- **QUICKSTART.md** - Quick start guide (legacy)
 
 ### `/demos` - 演示文档
 Demo and example documentation:

@@ -566,7 +566,6 @@ claude-daemon/
 |------|------|
 | [Daemon 使用指南](docs/guides/DAEMON-GUIDE.md) | 守护进程完整使用指南 |
 | [Web UI 指南](docs/guides/WEB-UI-GUIDE.md) | Web 界面使用说明 |
-| [推送模式指南](docs/guides/PUSH-GUIDE.md) | Hook 推送模式详解 |
 
 ### 架构文档
 | 文档 | 说明 |
