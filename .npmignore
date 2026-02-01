@@ -10,9 +10,7 @@ test/
 FIX-REPORT.md
 HOSTNAME-FEATURE.md
 IMPROVEMENTS.md
-PLUGIN-INSTALL-PLAN.md
 PUSH-GUIDE.md
-RELEASE-SUCCESS.md
 
 # 脚本（不需要发布的）
 package.sh

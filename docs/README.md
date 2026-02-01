@@ -22,13 +22,6 @@ Feature-specific documentation:
 - **IMPROVEMENTS.md** - System improvements
 - **WEB-UI-SUMMARY.md** - Web UI feature summary
 
-### `/release` - 发布文档
-Release and publishing documentation:
-- **NPM-PUBLISH.md** - NPM publishing guide
-- **PUBLISH-VERSION.md** - Version publishing process
-- **RELEASE-SUCCESS.md** - Release success report
-- **PLUGIN-INSTALL-PLAN.md** - Plugin installation plan
-
 ### `/demos` - 演示文档
 Demo and example documentation:
 - **DEMO.md** - System demonstration
@@ -65,7 +58,6 @@ Essential documentation in the project root:
 
 ### For Contributors
 - **Version History**: [CHANGELOG.md](../CHANGELOG.md)
-- **Release Process**: [release/](./release/)
 - **Improvements**: [features/IMPROVEMENTS.md](./features/IMPROVEMENTS.md)
 
 ---
