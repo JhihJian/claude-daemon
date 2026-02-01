@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Streamlined documentation from 55+ files to 9 essential files
+- Merged QUICK-START.md into README.md for single entry point
+- Consolidated architecture documentation into single OVERVIEW.md
+- Removed process documentation (testing reports, release docs, legacy docs)
+- Simplified docs/README.md as navigation index
+
+---
+
 ## [1.3.4] - 2026-01-31
 
 ### Added
