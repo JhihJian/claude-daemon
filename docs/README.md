@@ -63,14 +63,13 @@ Essential documentation in the project root:
 - **[README.md](../README.md)** - Project overview and main documentation
 - **[CLAUDE.md](../CLAUDE.md)** - Development guide for Claude Code
 - **[CHANGELOG.md](../CHANGELOG.md)** - Version history and release notes
-- **[QUICK-START.md](../QUICK-START.md)** - Quick start guide for users
 
 ---
 
 ## 🔍 Finding Documentation
 
 ### For Users
-- **Getting Started**: [QUICK-START.md](../QUICK-START.md)
+- **Getting Started**: [README.md - Quick Start](../README.md#-快速开始)
 - **Web UI Guide**: [guides/WEB-UI-GUIDE.md](./guides/WEB-UI-GUIDE.md)
 - **Daemon Usage**: [guides/DAEMON-GUIDE.md](./guides/DAEMON-GUIDE.md)
 

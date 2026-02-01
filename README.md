@@ -556,7 +556,6 @@ claude-daemon/
 ├── daemon-config.example.json    # 插件配置示例
 ├── CLAUDE.md                     # 开发者指南
 ├── CHANGELOG.md                  # 版本更新日志
-├── QUICK-START.md                # 快速开始指南
 └── README.md                     # 本文档
 ```
 
@@ -567,7 +566,6 @@ claude-daemon/
 ### 核心文档
 | 文档 | 说明 |
 |------|------|
-| [QUICK-START.md](QUICK-START.md) | 快速开始指南 |
 | [CLAUDE.md](CLAUDE.md) | 开发者指南（Claude Code 专用） |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新日志 |
 
