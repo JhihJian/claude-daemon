@@ -13,10 +13,6 @@ User guides and how-to documentation:
 - **DAEMON-GUIDE.md** - Daemon usage guide
 - **WEB-UI-GUIDE.md** - Web UI user guide
 
-### `/demos` - 演示文档
-Demo and example documentation:
-- **DEMO.md** - System demonstration
-
 ---
 
 ## 📚 Main Documentation (Root Directory)
