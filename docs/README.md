@@ -6,11 +6,7 @@ This directory contains organized documentation for the claude-daemon project.
 
 ### `/architecture` - 架构文档
 Technical architecture and design documents:
-- **AGENTS.md** - Agent system design
-- **DAEMON-IMPLEMENTATION.md** - Daemon implementation details
-- **OVERVIEW.md** - System overview
-- **claude-daemon-integration-architecture.md** - Integration architecture
-- **基于 claude-daemon 的多 Agent 协作架构.md** - Multi-agent collaboration architecture (Chinese)
+- **OVERVIEW.md** - Comprehensive system architecture (includes daemon implementation, agent system, integration architecture, and core components)
 
 ### `/guides` - 用户指南
 User guides and how-to documentation:

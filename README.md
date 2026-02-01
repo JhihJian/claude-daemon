@@ -579,9 +579,7 @@ claude-daemon/
 ### 架构文档
 | 文档 | 说明 |
 |------|------|
-| [系统概览](docs/architecture/OVERVIEW.md) | 系统架构概览 |
-| [实现细节](docs/architecture/DAEMON-IMPLEMENTATION.md) | 守护进程实现报告 |
-| [Agent 系统](docs/architecture/AGENTS.md) | 多 Agent 协作架构 |
+| [系统架构概览](docs/architecture/OVERVIEW.md) | 完整系统架构文档（包含守护进程实现、Agent 系统、集成架构） |
 
 ### 测试报告
 | 文档 | 说明 |
@@ -907,7 +905,7 @@ launchctl load ~/Library/LaunchAgents/com.claudecode.daemon.plist
 
 A: 参考示例：
 1. 查看 `plugins/claude-openai-proxy/` 示例
-2. 阅读 [插件开发文档](docs/architecture/DAEMON-IMPLEMENTATION.md)
+2. 阅读 [系统架构文档](docs/architecture/OVERVIEW.md)
 3. 实现 `PluginInterface` 接口
 4. 在 `daemon-config.json` 中配置
 
@@ -915,7 +913,7 @@ A: 参考示例：
 
 A: 使用步骤：
 1. 查看 `skills/task-orchestration/` 示例
-2. 阅读 [Agent 系统文档](docs/architecture/AGENTS.md)
+2. 阅读 [系统架构文档](docs/architecture/OVERVIEW.md)
 3. 配置 agent 配置文件
 4. 使用消息系统进行通信
 
