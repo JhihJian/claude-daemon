@@ -8,8 +8,6 @@ test/
 
 # 文档（部分）
 FIX-REPORT.md
-HOSTNAME-FEATURE.md
-IMPROVEMENTS.md
 PUSH-GUIDE.md
 
 # 脚本（不需要发布的）

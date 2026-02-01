@@ -16,12 +16,6 @@ User guides and how-to documentation:
 - **WEB-UI-GUIDE.md** - Web UI user guide
 - **QUICKSTART.md** - Quick start guide (legacy)
 
-### `/features` - 功能文档
-Feature-specific documentation:
-- **HOSTNAME-FEATURE.md** - Hostname feature documentation
-- **IMPROVEMENTS.md** - System improvements
-- **WEB-UI-SUMMARY.md** - Web UI feature summary
-
 ### `/demos` - 演示文档
 Demo and example documentation:
 - **DEMO.md** - System demonstration
@@ -50,15 +44,14 @@ Essential documentation in the project root:
 
 ### For Contributors
 - **Version History**: [CHANGELOG.md](../CHANGELOG.md)
-- **Improvements**: [features/IMPROVEMENTS.md](./features/IMPROVEMENTS.md)
 
 ---
 
 ## 📊 Documentation Statistics
 
-- **Total Documents**: 40+ markdown files
+- **Total Documents**: 24 markdown files
 - **Total Size**: 400KB+
-- **Categories**: 7 organized directories
+- **Categories**: 6 organized directories
 - **Languages**: English + Chinese
 
 ---
