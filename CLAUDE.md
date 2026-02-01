@@ -21,9 +21,6 @@ bun daemon/main.ts --enable-web-ui
 
 # Start Web UI separately
 bun web/server.ts
-
-# Test daemon functionality
-./test-daemon.sh
 ```
 
 ### Installation & Setup
@@ -34,9 +31,6 @@ bun web/server.ts
 
 # Install on Windows
 powershell -ExecutionPolicy Bypass -File install-windows-final.ps1
-
-# Install daemon mode (legacy)
-./install-daemon.sh
 ```
 
 ### Testing Hooks

@@ -33,9 +33,6 @@
     "web/",
     "bin/",
     "install.sh",
-    "install.ps1",
-    "install-windows.ps1",
-    "install-windows-v2.ps1",
     "install-windows-final.ps1",
     "README.md",
     "QUICKSTART.md"
@@ -44,8 +41,7 @@
     "postinstall": "echo '\n🎉 @jhihjian/claude-daemon 安装成功！\n\n使用方法:\n  npx @jhihjian/claude-daemon install\n\n或查看文档:\n  https://github.com/JhihJian/claude-daemon\n'",
     "dev": "bun daemon/main.ts --web --port 3000",
     "dev:web": "bun web/server.ts",
-    "test": "bun test-plugin-load.ts",
-    "test:daemon": "bash test-daemon.sh"
+    "test": "bun test-plugin-load.ts"
   },
   "engines": {
     "node": ">=16.0.0"
