@@ -534,8 +534,7 @@ claude-daemon/
 │   ├── architecture/             # 架构文档
 │   ├── guides/                   # 用户指南
 │   ├── features/                 # 功能文档
-│   ├── demos/                    # 演示文档
-│   └── legacy/                   # 旧文档
+│   └── demos/                    # 演示文档
 │
 ├── bin/                          # 可执行文件
 │   └── cli.js                    # CLI 管理工具

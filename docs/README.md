@@ -26,14 +26,6 @@ Feature-specific documentation:
 Demo and example documentation:
 - **DEMO.md** - System demonstration
 
-### `/legacy` - 旧文档
-Legacy documentation (historical reference):
-- **WHAT-IS-BUN.md** - Bun runtime introduction
-- **WINDOWS.md** - Windows platform notes (legacy)
-- **WINDOWS-INSTALL.md** - Windows installation (legacy)
-- **WINDOWS-ISSUES.md** - Windows issues (legacy)
-- **WINDOWS-QUICKSTART.md** - Windows quick start (legacy)
-
 ---
 
 ## 📚 Main Documentation (Root Directory)

@@ -23,8 +23,6 @@ quick-install.sh
 
 # Windows 特定文件（可选）
 install.ps1
-WINDOWS.md
-WINDOWS-QUICKSTART.md
 
 # 系统文件
 .DS_Store
