@@ -1,208 +1,114 @@
-# Claude Code 会话历史系统 - 文件清单
+# Architecture Overview
 
-## 📁 目录结构
+Claude Daemon is a background service system that automatically records, analyzes, and monitors Claude Code sessions using a daemon architecture with lightweight hooks, Unix Socket IPC, and persistent storage.
 
-```
-/data/app/claude-history/
-├── README.md                    # 完整文档
-├── QUICKSTART.md               # 快速开始指南 ⭐
-├── SYNC-GUIDE.md               # 详细同步指南
-├── FIX-REPORT.md               # 修复报告
-│
-├── hooks/                      # Claude Code Hooks
-│   ├── SessionRecorder.hook.ts        # 会话启动记录
-│   ├── SessionToolCapture-v2.hook.ts  # 工具调用记录
-│   └── SessionAnalyzer.hook.ts        # 会话结束分析
-│
-├── tools/                      # 查询工具
-│   ├── SessionQuery.ts               # 会话查询
-│   ├── SessionStats.ts               # 统计分析
-│   └── show-conversation.sh          # 友好显示 ⭐
-│
-├── install.sh                  # 一键安装脚本 ⭐
-├── setup-git.sh               # Git 仓库初始化
-├── setup-auto-sync.sh         # 自动同步设置
-├── sync-git.sh                # Git 同步脚本
-└── package.sh                 # 打包脚本
-```
+## System Architecture
 
-## 🎯 使用流程
-
-### 首次安装（当前电脑）
-```bash
-cd /data/app/claude-history
-./install.sh
-```
-
-### 部署到其他电脑
-
-#### 方式 1: 打包传输
-```bash
-# 电脑 A
-./package.sh
-scp claude-history-system-*.tar.gz user@computer-b:/tmp/
-
-# 电脑 B
-cd /tmp && tar -xzf claude-history-system-*.tar.gz
-cd claude-history && ./install.sh
-```
-
-#### 方式 2: Git 克隆
-```bash
-git clone <仓库> /data/app/claude-history
-cd /data/app/claude-history
-./install.sh
-```
-
-### 设置数据同步
-
-#### Git 同步（推荐）
-```bash
-# 1. 初始化（电脑 A）
-./setup-git.sh
-
-# 2. 设置自动同步
-./setup-auto-sync.sh
-
-# 3. 克隆到其他电脑（电脑 B）
-git clone <仓库> ~/.claude/SESSIONS
-```
-
-#### 云存储同步
-```bash
-mv ~/.claude/SESSIONS ~/Dropbox/claude-sessions
-ln -s ~/Dropbox/claude-sessions ~/.claude/SESSIONS
-```
-
-## 📝 核心功能
-
-### 记录内容
-- ✅ 工作目录和 Git 信息
-- ✅ 用户问题
-- ✅ Claude 回答
-- ✅ 工具调用和结果
-- ✅ 成功率统计
-
-### 查询功能
-```bash
-# 最近会话
-claude-sessions recent 5
-
-# 按类型查询
-claude-sessions type coding
-
-# 查看详情（包含完整对话）
-claude-sessions show <session_id>
-
-# 统计信息
-claude-sessions stats global
-```
-
-### 会话分类
-- `coding` - 编码
-- `debugging` - 调试
-- `research` - 研究
-- `writing` - 写作
-- `git` - Git 操作
-- `mixed` - 混合
-
-## 🔧 关键改进
-
-### v1.0 (2026-01-24)
-
-1. **修复 Hooks 执行问题**
-   - 使用 Bun 完整路径
-   - 解决 PATH 问题
-
-2. **正确捕获工具输出**
-   - 从 `tool_response.stdout` 读取
-   - 正确判断成功状态
-
-3. **添加对话内容记录** ⭐
-   - 记录用户问题
-   - 记录 Claude 回答
-   - 从 transcript 提取
-
-4. **多设备支持**
-   - 一键安装脚本
-   - Git 同步方案
-   - 自动同步设置
-
-## 🎓 示例输出
-
-### 查询会话
-```json
-{
-  "session_id": "04291516-...",
-  "session_type": "mixed",
-  "conversation": {
-    "user_messages": ["今天是星期几"],
-    "assistant_responses": ["今天是 2026年1月24日，是**星期六**。"],
-    "message_count": 2
-  },
-  "success_rate": 100
-}
-```
-
-### 友好显示
-```
-========================================
-💬 对话内容
-========================================
-
-👤 用户: 今天是星期几
-
-🤖 Claude: 今天是 2026年1月24日，是**星期六**。
-
-========================================
-🔧 工具使用
-========================================
-
-没有使用工具
-```
-
-## 📊 数据存储
+The system follows a push-based event-driven architecture:
 
 ```
-~/.claude/SESSIONS/
-├── raw/                        # 原始事件（JSONL）
-│   └── 2026-01/
-│       └── session-{id}.jsonl
-├── analysis/
-│   ├── summaries/              # 会话摘要（包含对话）
-│   │   └── 2026-01/
-│   │       └── summary-{id}.json
-│   ├── by-type/                # 按类型索引
-│   └── by-directory/           # 按目录索引
-└── index/
-    └── metadata.json           # 全局统计
+Claude Code → Hooks → Unix Socket → Daemon → Storage
+                         ↓
+                    Event Queue → Session Analyzer → JSONL/JSON Files
 ```
 
-## ⚠️ 注意事项
+### Core Data Flow
 
-### 数据隐私
-- 使用私有仓库
-- 不提交敏感信息
-- 定期清理旧数据
+1. **Hook Execution**: Claude Code triggers hooks at session lifecycle events (start, tool use, end)
+2. **Push to Daemon**: Hooks connect to Unix Socket and push JSON events
+3. **Event Queue**: Daemon receives events and queues them for sequential processing
+4. **Session Analyzer**: Tracks active sessions, accumulates tool usage, classifies session type
+5. **Storage Service**: Writes raw events to JSONL, generates summaries as JSON
+6. **Indexing**: Creates indexes by type, directory, and hostname for fast queries
+7. **Scheduled Tasks**: Health checks (5min), cleanup (daily), session monitoring (1min)
 
-### 性能
-- JSONL 格式，流式写入
-- Hook 执行时间 < 50ms
-- 不阻塞 Claude Code
+## Core Components
 
-### 冲突处理
-- Git 自动合并 JSONL 文件
-- 按主机名分目录（可选）
-- 冲突解决脚本
+### Daemon Services
 
-## 🔗 相关资源
+**daemon/main.ts** - Orchestrates all services, sets up event handlers, manages lifecycle. Connects HookServer events to EventQueue, which triggers SessionAnalyzer and StorageService. Registers scheduled tasks with Scheduler and handles graceful shutdown (SIGTERM/SIGINT).
 
-- Claude Code 文档: https://docs.anthropic.com/claude/docs/claude-code
-- Git 教程: https://git-scm.com/docs
-- Syncthing: https://syncthing.net/
+**daemon/hook-server.ts** - Unix Socket server listening on `/tmp/claude-daemon.sock` (Linux/macOS) or TCP socket on `127.0.0.1:39281` (Windows). Receives newline-delimited JSON from hooks, emits typed events (`session_start`, `tool_use`, `session_end`), handles multiple concurrent connections non-blocking.
 
----
+**daemon/event-queue.ts** - Ensures sequential event processing to prevent race conditions when multiple hooks fire simultaneously. FIFO queue with configurable max size, emits events after dequeuing for processing.
 
-**维护者**: Claude Code 会话历史系统
-**版本**: v1.0
-**日期**: 2026-01-24
+**daemon/session-analyzer.ts** - Real-time session tracking and classification. Maintains map of active sessions with accumulated data. Classifies sessions based on tool usage patterns: `coding` (Edit/Write > 40%), `debugging` (test commands + Read > Edit), `research` (Grep/Glob > 30%), `writing` (Markdown edits > 50%), `git` (Git commands > 50%). Generates summary on session end with tool stats, files modified, and duration.
+
+**daemon/storage-service.ts** - Unified data persistence layer. Stores raw events as JSONL (`~/.claude/SESSIONS/raw/YYYY-MM/session-{id}.jsonl`), summaries as JSON (`~/.claude/SESSIONS/analysis/summaries/YYYY-MM/summary-{id}.json`), and creates indexes by type and directory.
+
+**daemon/scheduler.ts** - Task scheduling system for periodic maintenance operations. Runs health checks, cleanup tasks, and session monitoring at configured intervals.
+
+**daemon/health-monitor.ts** - Monitors system health including directory structure, storage usage, hook configuration, and index integrity.
+
+**daemon/cleanup-service.ts** - Automated data cleanup service that removes old sessions (default 90 days) and manages storage limits (default 5GB).
+
+### Hook System
+
+Hooks are lightweight TypeScript scripts executed by Claude Code at specific lifecycle points. They must read JSON from stdin, complete within timeout (default 10s), output `{"continue": true}` to allow session to proceed, and use `#!/usr/bin/env bun` shebang.
+
+**Push Mode Hooks** (hooks-push/):
+- **SessionRecorder.hook.ts** - Captures session start events with metadata
+- **SessionToolCapture.hook.ts** - Records tool invocations and results
+- **SessionAnalyzer.hook.ts** - Triggers session analysis on completion
+
+Hooks connect to daemon socket with 2s timeout and fall back to file mode if daemon unavailable, ensuring non-blocking operation to avoid delaying Claude Code.
+
+### Storage Layer
+
+**JSONL Format** (raw events): One JSON object per line, append-only. Contains event_type, session_id, timestamp, and data fields.
+
+**JSON Format** (summaries): Complete session analysis including session_id, session_type, duration_seconds, total_tools, success_rate, tool_usage breakdown, files_modified array, working_directory, git_repo, and git_branch.
+
+**Indexes**: JSON files organized by type (`by-type/{type}/sessions.json`) and directory (`by-directory/{hash}/sessions.json`) for fast queries.
+
+## Platform Differences
+
+### IPC Mechanism
+
+**Linux/macOS**: Unix domain socket at `/tmp/claude-daemon.sock` for high-performance local IPC.
+
+**Windows**: TCP socket on `127.0.0.1:39281` (localhost only). Bun v1.3.5 has a critical bug with Windows named pipes causing crashes. TCP socket provides equivalent functionality with negligible performance impact (<0.2ms latency). Port 39281 chosen as "CLAUDE" on phone keypad. Security maintained by binding to localhost only.
+
+### Installation
+
+**install.sh** - Linux/macOS with systemd/launchd integration for automatic daemon startup.
+
+**install-windows-final.ps1** - Windows with Task Scheduler integration.
+
+Both scripts set up hooks in `~/.claude/hooks/` and configure Claude Code settings.
+
+## Web UI Architecture
+
+**web/server.ts** - Bun.serve-based HTTP + WebSocket server providing RESTful API endpoints under `/api/`, static file serving from `web/public/`, and WebSocket at `/ws` for real-time session updates. Daemon broadcasts new session summaries to all connected clients.
+
+**API Endpoints**: Recent sessions, filter by type/directory, single session details, global statistics, type distribution, and timeline data.
+
+## Configuration Management
+
+**lib/config.ts** - Centralized configuration loading from environment variables, config file (`~/.claude/session-config.json`), and defaults. Environment variables take precedence. Provides path helpers for all storage locations.
+
+**lib/logger.ts** - Structured logging system with levels (DEBUG, INFO, WARN, ERROR, SILENT) controlled via `SESSION_LOG_LEVEL` environment variable.
+
+**lib/errors.ts** - Custom error classes (`FileSystemError`, `ValidationError`, `TimeoutError`) for consistent error handling.
+
+## Key Design Patterns
+
+### Concurrency Safety
+
+Event queue ensures sequential processing - no locks needed in handlers. Storage operations use synchronous methods (appendFileSync, writeFileSync) for atomicity. Scheduler tasks run independently but are idempotent.
+
+### Error Handling
+
+Hooks never throw - catch all errors and log them. Daemon logs errors but continues running (resilient design). Custom error classes provide structured error information.
+
+### Security
+
+All directories created with mode 0o700 (owner-only access). All files created with mode 0o600 (owner-only read/write). Web UI binds to 127.0.0.1 only (no external access). No authentication - relies on filesystem permissions.
+
+### Fallback Behavior
+
+If daemon is not running, hooks automatically write directly to JSONL files (degraded mode), ensuring session data is never lost even if the daemon crashes or is unavailable.
+
+## Extension Points
+
+The system supports plugins through a plugin architecture in the `plugins/` directory. Plugins can extend daemon functionality, add new API endpoints, or integrate with external services. The modular design allows independent development and deployment of extensions without modifying core daemon code.
