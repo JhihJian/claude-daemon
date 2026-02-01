@@ -10,9 +10,15 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { connect } from 'net';
-import { SessionsAPI } from './api/sessions';
+import { SessionsAPI as OldSessionsAPI } from './api/sessions';
 import { StatsAPI } from './api/stats';
+import { SessionsAPI } from './api/sessions-api';
+import { AgentsAPI } from './api/agents-api';
 import { createHookLogger } from '../lib/logger';
+import type { AgentDefinitionRegistry } from '../daemon/agent-definition-registry';
+import type { SessionRegistry } from '../daemon/session-registry';
+import type { SessionLauncher } from '../daemon/session-launcher';
+import type { StorageService } from '../daemon/storage-service';
 
 const logger = createHookLogger('WebServer');
 
@@ -23,17 +29,42 @@ const logger = createHookLogger('WebServer');
 export class WebServer {
   private port: number;
   private hostname: string;
-  private sessionsAPI: SessionsAPI;
+  private oldSessionsAPI: OldSessionsAPI;
   private statsAPI: StatsAPI;
+  private sessionsAPI?: SessionsAPI;
+  private agentsAPI?: AgentsAPI;
   private server: any;
   private wsClients: Set<any> = new Set();
   private daemonSocketPath = '/tmp/claude-daemon.sock';
 
-  constructor(port: number = 3000, hostname: string = '127.0.0.1') {
+  constructor(
+    port: number = 3000,
+    hostname: string = '127.0.0.1',
+    services?: {
+      agentRegistry: AgentDefinitionRegistry;
+      sessionRegistry: SessionRegistry;
+      sessionLauncher: SessionLauncher;
+      storage: StorageService;
+    }
+  ) {
     this.port = port;
     this.hostname = hostname;
-    this.sessionsAPI = new SessionsAPI();
+    this.oldSessionsAPI = new OldSessionsAPI();
     this.statsAPI = new StatsAPI();
+
+    // Initialize new APIs if services provided
+    if (services) {
+      this.sessionsAPI = new SessionsAPI(
+        services.agentRegistry,
+        services.sessionRegistry,
+        services.sessionLauncher,
+        services.storage
+      );
+      this.agentsAPI = new AgentsAPI(
+        services.agentRegistry,
+        services.sessionRegistry
+      );
+    }
   }
 
   /**
@@ -152,13 +183,115 @@ export class WebServer {
   ): Promise<{ status: number; data: any }> {
     const segments = path.split('/').filter(Boolean);
 
-    // /api/sessions/*
+    // /api/agents/*
+    if (segments[1] === 'agents' && this.agentsAPI) {
+      // GET /api/agents - List all agents
+      if (segments.length === 2) {
+        const agents = await this.agentsAPI.listAgents();
+        return { status: 200, data: agents };
+      }
+
+      // GET /api/agents/:name - Get specific agent
+      if (segments.length === 3 && segments[2]) {
+        const agentName = segments[2];
+        const agent = await this.agentsAPI.getAgentWithStats(agentName);
+        if (!agent) {
+          return { status: 404, data: { error: 'Agent not found' } };
+        }
+        return { status: 200, data: agent };
+      }
+
+      // POST /api/agents/:name/reload - Reload agent config
+      if (segments.length === 4 && segments[3] === 'reload') {
+        const agentName = segments[2];
+        const result = await this.agentsAPI.reloadAgent(agentName);
+        return { status: result.success ? 200 : 500, data: result };
+      }
+
+      // GET /api/agents/:name/environment - Get environment keys
+      if (segments.length === 4 && segments[3] === 'environment') {
+        const agentName = segments[2];
+        const env = await this.agentsAPI.getAgentEnvironmentKeys(agentName);
+        if (!env) {
+          return { status: 404, data: { error: 'Agent not found' } };
+        }
+        return { status: 200, data: env };
+      }
+    }
+
+    // /api/sessions/* (new API)
+    if (segments[1] === 'sessions' && this.sessionsAPI) {
+      // GET /api/sessions/active - List active sessions
+      if (segments[2] === 'active' && segments.length === 3) {
+        const sessions = await this.sessionsAPI.getActiveSessions();
+        return { status: 200, data: sessions };
+      }
+
+      // GET /api/sessions/active/:id - Get specific active session
+      if (segments[2] === 'active' && segments[3]) {
+        const session = await this.sessionsAPI.getActiveSession(segments[3]);
+        if (!session) {
+          return { status: 404, data: { error: 'Session not found' } };
+        }
+        return { status: 200, data: session };
+      }
+
+      // POST /api/sessions/launch - Launch new session
+      if (segments[2] === 'launch') {
+        const body = await this.parseRequestBody(url);
+        if (!body.agentName || !body.workingDirectory) {
+          return {
+            status: 400,
+            data: { error: 'Missing agentName or workingDirectory' },
+          };
+        }
+        const result = await this.sessionsAPI.launchSession({
+          agentName: body.agentName,
+          workingDirectory: body.workingDirectory,
+        });
+        return { status: result.success ? 200 : 500, data: result };
+      }
+
+      // POST /api/sessions/:id/terminate - Terminate session
+      if (segments[3] === 'terminate') {
+        const sessionId = segments[2];
+        const success = await this.sessionsAPI.terminateSession(sessionId);
+        return {
+          status: success ? 200 : 404,
+          data: { success, sessionId },
+        };
+      }
+
+      // GET /api/sessions/archive - Query archived sessions
+      if (segments[2] === 'archive' && segments.length === 3) {
+        const filters = {
+          agentName: url.searchParams.get('agent') || undefined,
+          workingDirectory: url.searchParams.get('directory') || undefined,
+          startDate: url.searchParams.get('startDate') || undefined,
+          endDate: url.searchParams.get('endDate') || undefined,
+          limit: parseInt(url.searchParams.get('limit') || '50'),
+        };
+        const sessions = await this.sessionsAPI.queryArchive(filters);
+        return { status: 200, data: sessions };
+      }
+
+      // GET /api/sessions/archive/:id - Get archived session
+      if (segments[2] === 'archive' && segments[3]) {
+        const session = await this.sessionsAPI.getArchivedSession(segments[3]);
+        if (!session) {
+          return { status: 404, data: { error: 'Session not found' } };
+        }
+        return { status: 200, data: session };
+      }
+    }
+
+    // Fallback to old sessions API
     if (segments[1] === 'sessions') {
       if (segments[2] === 'recent') {
         const limit = parseInt(url.searchParams.get('limit') || '10');
         return {
           status: 200,
-          data: this.sessionsAPI.getRecent(limit),
+          data: this.oldSessionsAPI.getRecent(limit),
         };
       }
 
@@ -184,7 +317,7 @@ export class WebServer {
         }
         return {
           status: 200,
-          data: this.sessionsAPI.getByType(type),
+          data: this.oldSessionsAPI.getByType(type),
         };
       }
 
@@ -195,7 +328,7 @@ export class WebServer {
         }
         return {
           status: 200,
-          data: this.sessionsAPI.getByDirectory(directory),
+          data: this.oldSessionsAPI.getByDirectory(directory),
         };
       }
 
@@ -206,16 +339,16 @@ export class WebServer {
         }
         return {
           status: 200,
-          data: this.sessionsAPI.getByHostname(hostname),
+          data: this.oldSessionsAPI.getByHostname(hostname),
         };
       }
 
-      if (segments[2] && !['recent', 'active', 'by-type', 'by-directory', 'by-host'].includes(segments[2])) {
+      if (segments[2] && !['recent', 'active', 'by-type', 'by-directory', 'by-host', 'archive', 'launch'].includes(segments[2])) {
         // /api/sessions/{id}
         const sessionId = segments[2];
         return {
           status: 200,
-          data: this.sessionsAPI.getById(sessionId),
+          data: this.oldSessionsAPI.getById(sessionId),
         };
       }
     }
@@ -269,6 +402,23 @@ export class WebServer {
       status: 404,
       data: { error: 'API endpoint not found' },
     };
+  }
+
+  /**
+   * Parse request body from URL (for POST requests)
+   */
+  private async parseRequestBody(url: URL): Promise<any> {
+    try {
+      // In Bun, we need to get the body from the request object
+      // For now, parse from query params as a workaround
+      const body: any = {};
+      for (const [key, value] of url.searchParams.entries()) {
+        body[key] = value;
+      }
+      return body;
+    } catch (error) {
+      return {};
+    }
   }
 
   private async requestDaemon(command: string, data?: Record<string, unknown>): Promise<{ success: boolean; data?: any; error?: string }> {

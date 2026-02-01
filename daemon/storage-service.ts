@@ -4,10 +4,12 @@
  */
 
 import { appendFileSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { appendFile, writeFile, readFile, mkdir } from 'fs/promises';
+import { join, dirname } from 'path';
 import { config } from '../lib/config.ts';
 import { createHookLogger } from '../lib/logger.ts';
 import { FileSystemError, safeJSONParse } from '../lib/errors.ts';
+import type { SessionRecord } from './session-registry.ts';
 
 const logger = createHookLogger('StorageService');
 
@@ -20,6 +22,7 @@ export interface SessionEvent {
 
 export class StorageService {
   private cfg = config.get();
+  private writeLocks = new Map<string, Promise<void>>();
 
   constructor() {
     this.ensureDirectories();
@@ -303,5 +306,164 @@ export class StorageService {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /**
+   * Archive a session record
+   * Uses async API with write locks for concurrency safety
+   */
+  async archiveSession(session: SessionRecord): Promise<void> {
+    try {
+      const yearMonth = new Date(session.start_time).toISOString().slice(0, 7); // YYYY-MM
+      const archivePath = join(
+        this.cfg.sessionsDir,
+        'archive',
+        yearMonth,
+        'sessions.jsonl'
+      );
+
+      await this.ensureDirectoryAsync(dirname(archivePath));
+      await this.writeWithLock(archivePath, JSON.stringify(session) + '\n');
+
+      logger.debug('Session archived', {
+        sessionId: session.session_id,
+        agent: session.agent_name,
+        file: archivePath,
+      });
+    } catch (error) {
+      logger.error('Failed to archive session', {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: session.session_id,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Query archived sessions with filters
+   */
+  async queryArchive(filters: {
+    agentName?: string;
+    workingDirectory?: string;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+  }): Promise<SessionRecord[]> {
+    try {
+      const archiveDir = join(this.cfg.sessionsDir, 'archive');
+
+      if (!existsSync(archiveDir)) {
+        return [];
+      }
+
+      const results: SessionRecord[] = [];
+      const yearMonths = this.getYearMonthsInRange(filters.startDate, filters.endDate);
+
+      for (const yearMonth of yearMonths) {
+        const archivePath = join(archiveDir, yearMonth, 'sessions.jsonl');
+
+        if (!existsSync(archivePath)) {
+          continue;
+        }
+
+        const content = await readFile(archivePath, 'utf-8');
+        const lines = content.trim().split('\n');
+
+        for (const line of lines) {
+          if (!line) continue;
+
+          const session = safeJSONParse<SessionRecord>(line, null as any, 'archived session');
+          if (!session) continue;
+
+          // Apply filters
+          if (filters.agentName && session.agent_name !== filters.agentName) {
+            continue;
+          }
+
+          if (filters.workingDirectory && session.working_directory !== filters.workingDirectory) {
+            continue;
+          }
+
+          if (filters.startDate && session.start_time < filters.startDate) {
+            continue;
+          }
+
+          if (filters.endDate && session.start_time > filters.endDate) {
+            continue;
+          }
+
+          results.push(session);
+        }
+      }
+
+      // Sort by start time descending
+      results.sort((a, b) =>
+        new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+      );
+
+      // Apply limit
+      if (filters.limit && results.length > filters.limit) {
+        return results.slice(0, filters.limit);
+      }
+
+      return results;
+    } catch (error) {
+      logger.error('Failed to query archive', {
+        error: error instanceof Error ? error.message : String(error),
+        filters,
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Write to file with lock to prevent concurrent write conflicts
+   */
+  private async writeWithLock(filePath: string, content: string): Promise<void> {
+    const existingLock = this.writeLocks.get(filePath) ?? Promise.resolve();
+
+    const newLock = existingLock
+      .then(async () => {
+        await appendFile(filePath, content, { mode: 0o600 });
+      })
+      .catch(async (error) => {
+        // If file doesn't exist, create it
+        if (error.code === 'ENOENT') {
+          await this.ensureDirectoryAsync(dirname(filePath));
+          await writeFile(filePath, content, { mode: 0o600 });
+        } else {
+          throw error;
+        }
+      });
+
+    this.writeLocks.set(filePath, newLock);
+    await newLock;
+  }
+
+  /**
+   * Ensure directory exists (async version)
+   */
+  private async ensureDirectoryAsync(dirPath: string): Promise<void> {
+    if (!existsSync(dirPath)) {
+      await mkdir(dirPath, { recursive: true, mode: 0o700 });
+    }
+  }
+
+  /**
+   * Get year-month strings in range for querying
+   */
+  private getYearMonthsInRange(startDate?: string, endDate?: string): string[] {
+    const start = startDate ? new Date(startDate) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const end = endDate ? new Date(endDate) : new Date();
+
+    const yearMonths: string[] = [];
+    const current = new Date(start);
+
+    while (current <= end) {
+      yearMonths.push(current.toISOString().slice(0, 7));
+      current.setMonth(current.getMonth() + 1);
+    }
+
+    return yearMonths;
   }
 }

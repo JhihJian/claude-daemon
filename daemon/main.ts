@@ -15,6 +15,10 @@ import { Scheduler } from './scheduler.ts';
 import { HealthMonitor } from './health-monitor.ts';
 import { CleanupService } from './cleanup-service.ts';
 import { PluginManager } from './plugin-manager.ts';
+import { AgentDefinitionRegistry } from './agent-definition-registry.ts';
+import { SessionRegistry } from './session-registry.ts';
+import { SessionLauncher } from './session-launcher.ts';
+import { MessageBroker } from './message-broker.ts';
 import { createHookLogger } from '../lib/logger.ts';
 import { config } from '../lib/config.ts';
 import WebServer from '../web/server.ts';
@@ -30,6 +34,10 @@ class ClaudeDaemon {
   private healthMonitor: HealthMonitor;
   private cleanupService: CleanupService;
   private pluginManager: PluginManager;
+  private agentRegistry: AgentDefinitionRegistry;
+  private sessionRegistry: SessionRegistry;
+  private sessionLauncher: SessionLauncher;
+  private messageBroker: MessageBroker;
   private eventBus: EventEmitter;
   private webServer?: WebServer;
   private running = false;
@@ -51,6 +59,20 @@ class ClaudeDaemon {
     this.scheduler = new Scheduler();
     this.healthMonitor = new HealthMonitor();
     this.cleanupService = new CleanupService();
+
+    // 初始化新服务
+    this.agentRegistry = new AgentDefinitionRegistry();
+    this.sessionRegistry = new SessionRegistry(this.storage);
+    this.sessionLauncher = new SessionLauncher(
+      this.agentRegistry,
+      this.sessionRegistry,
+      this.eventBus
+    );
+    this.messageBroker = new MessageBroker();
+    this.messageBroker.setSessionRegistry(this.sessionRegistry);
+
+    // Connect SessionAnalyzer with SessionRegistry
+    this.analyzer.setSessionRegistry(this.sessionRegistry);
 
     // 初始化插件管理器（传入 HookServer 以便插件可以注册 IPC 命令）
     this.pluginManager = new PluginManager(this.storage, this.eventBus, this.hookServer);
@@ -97,6 +119,26 @@ class ClaudeDaemon {
       await this.eventQueue.enqueue({
         id: `${event.session_id}-end`,
         type: 'session_end',
+        data: event,
+        timestamp: Date.now(),
+      });
+    });
+
+    // 会话注册
+    this.hookServer.on('session_register', async (event: HookEvent) => {
+      await this.eventQueue.enqueue({
+        id: `${event.session_id}-register`,
+        type: 'session_register',
+        data: event,
+        timestamp: Date.now(),
+      });
+    });
+
+    // 会话注销
+    this.hookServer.on('session_unregister', async (event: HookEvent) => {
+      await this.eventQueue.enqueue({
+        id: `${event.session_id}-unregister`,
+        type: 'session_unregister',
         data: event,
         timestamp: Date.now(),
       });
@@ -199,6 +241,67 @@ class ClaudeDaemon {
         }
       }
     });
+
+    // 处理会话注册
+    this.eventQueue.on('session_register', async (event: QueuedEvent) => {
+      const data = event.data.data;
+
+      // 注册会话
+      await this.sessionRegistry.register({
+        session_id: data.session_id,
+        agent_name: data.agent_name,
+        pid: data.pid,
+        status: 'active',
+        start_time: data.start_time,
+        working_directory: data.working_directory,
+        git_repo: data.git_repo,
+        git_branch: data.git_branch,
+        environment: data.environment,
+      });
+
+      // 发送到事件总线（用于 SessionLauncher 等待注册）
+      this.eventBus.emit('session_registered', {
+        session_id: data.session_id,
+        pid: data.pid,
+      });
+
+      // 广播到 Web UI
+      if (this.webServer) {
+        this.webServer.broadcast({
+          type: 'session_registered',
+          data: this.sessionRegistry.get(data.session_id),
+        });
+      }
+
+      logger.info('Session registered', {
+        sessionId: data.session_id,
+        agent: data.agent_name,
+        pid: data.pid,
+      });
+    });
+
+    // 处理会话注销
+    this.eventQueue.on('session_unregister', async (event: QueuedEvent) => {
+      const sessionId = event.data.data.session_id;
+
+      // 注销会话（自动归档）
+      const session = await this.sessionRegistry.unregister(sessionId);
+
+      // 广播到 Web UI
+      if (this.webServer) {
+        this.webServer.broadcast({
+          type: 'session_unregistered',
+          data: { session_id: sessionId },
+        });
+      }
+
+      if (session) {
+        logger.info('Session unregistered and archived', {
+          sessionId,
+          agent: session.agent_name,
+        });
+      }
+    });
   }
 
   /**
@@ -259,6 +362,19 @@ class ClaudeDaemon {
         }
       },
     });
+
+    // 清理僵尸会话 - 每 5 分钟
+    this.scheduler.register({
+      name: 'stale-session-cleanup',
+      interval: 5 * 60 * 1000,
+      enabled: true,
+      handler: async () => {
+        const cleaned = await this.sessionRegistry.cleanupStaleSessions();
+        if (cleaned > 0) {
+          logger.info('Cleaned up stale sessions', { count: cleaned });
+        }
+      },
+    });
   }
 
   /**
@@ -277,28 +393,41 @@ class ClaudeDaemon {
     await this.hookServer.start();
     logger.info('✓ Hook server started');
 
-    // 2. 启动调度器
+    // 2. 加载代理配置
+    await this.agentRegistry.initialize();
+    logger.info(`✓ Loaded ${this.agentRegistry.listAgents().length} agent configuration(s)`);
+
+    // 3. 恢复活动会话状态
+    await this.sessionRegistry.initialize();
+    logger.info(`✓ Restored ${this.sessionRegistry.getActiveCount()} active session(s)`);
+
+    // 4. 启动调度器
     this.scheduler.start();
     logger.info('✓ Scheduler started');
 
-    // 3. 加载插件
+    // 5. 加载插件
     await this.loadPlugins();
 
-    // 4. 连接插件命令处理器到 Hook Server
+    // 6. 连接插件命令处理器到 Hook Server
     this.setupPluginCommandHandlers();
 
-    // 4. 启动 Web UI（可选）
+    // 7. 启动 Web UI（可选）
     if (this.webEnabled) {
       const port = this.webPort || 3000;
       const host = this.webHost || '127.0.0.1';
       this.webPort = port;
       this.webHost = host;
-      this.webServer = new WebServer(port, host);
+      this.webServer = new WebServer(port, host, {
+        agentRegistry: this.agentRegistry,
+        sessionRegistry: this.sessionRegistry,
+        sessionLauncher: this.sessionLauncher,
+        storage: this.storage,
+      });
       await this.webServer.start();
       logger.info('✓ Web UI started');
     }
 
-    // 5. 执行首次健康检查
+    // 8. 执行首次健康检查
     const health = await this.healthMonitor.check();
     if (health.healthy) {
       logger.info('✓ Initial health check passed');
@@ -308,7 +437,7 @@ class ClaudeDaemon {
       });
     }
 
-    // 6. 设置信号处理
+    // 9. 设置信号处理
     this.setupSignalHandlers();
 
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -316,6 +445,10 @@ class ClaudeDaemon {
     logger.info('   Waiting for hook events...');
     if (this.webServer) {
       logger.info(`   Web UI: http://${this.webHost || '127.0.0.1'}:${this.webPort || 3000}`);
+    }
+    const agents = this.agentRegistry.listAgents();
+    if (agents.length > 0) {
+      logger.info(`   Agent configs: ${agents.join(', ')}`);
     }
     const plugins = this.pluginManager.listPlugins();
     if (plugins.length > 0) {

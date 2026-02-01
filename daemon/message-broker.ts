@@ -10,17 +10,19 @@ import type {
   MessageQueryOptions,
   TaskCompletionReport,
 } from "./types/message-types";
+import type { SessionRegistry } from "./session-registry.ts";
 
 /**
  * 消息代理
  *
- * 管理Agent间的消息路由、队列和持久化
+ * 管理Session间的消息路由、队列和持久化
  */
 export class MessageBroker extends EventEmitter {
   private messages: Map<string, AgentMessage> = new Map();
   private inbox: Map<string, Set<string>> = new Map(); // sessionId -> messageIds
   private storageDir: string;
   private flushInterval: ReturnType<typeof setInterval> | null = null;
+  private sessionRegistry?: SessionRegistry;
 
   constructor(storageDir: string = `${process.env.HOME || "."}/.claude/AGENT_MESSAGES`) {
     super();
@@ -28,6 +30,13 @@ export class MessageBroker extends EventEmitter {
     this.ensureStorageDir();
     this.loadPersistedMessages();
     this.startFlushTask();
+  }
+
+  /**
+   * Set SessionRegistry reference for broadcast message resolution
+   */
+  setSessionRegistry(registry: SessionRegistry): void {
+    this.sessionRegistry = registry;
   }
 
   /**
@@ -103,7 +112,10 @@ export class MessageBroker extends EventEmitter {
    */
   private resolveTargets(to: MessageTarget): string[] {
     if (to === "broadcast") {
-      // 返回所有已知的sessionId（这里需要从AgentRegistry获取，暂时返回空）
+      // 返回所有活动会话的sessionId
+      if (this.sessionRegistry) {
+        return this.sessionRegistry.getActive().map(s => s.session_id);
+      }
       return [];
     }
 

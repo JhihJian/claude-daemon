@@ -5,6 +5,7 @@
 
 import { createHookLogger } from '../lib/logger.ts';
 import { StorageService } from './storage-service.ts';
+import type { SessionRegistry } from './session-registry.ts';
 
 const logger = createHookLogger('SessionAnalyzer');
 
@@ -20,6 +21,7 @@ export type SessionType =
 export interface SessionSummary {
   session_id: string;
   timestamp: string;
+  agent_name: string;
   working_directory: string;
   git_repo: string | null;
   git_branch: string | null;
@@ -42,10 +44,18 @@ export interface SessionSummary {
 
 export class SessionAnalyzer {
   private storage: StorageService;
+  private sessionRegistry?: SessionRegistry;
   private activeSessions: Map<string, ActiveSession> = new Map();
 
   constructor(storage: StorageService) {
     this.storage = storage;
+  }
+
+  /**
+   * Set SessionRegistry reference for agent name lookup
+   */
+  setSessionRegistry(registry: SessionRegistry): void {
+    this.sessionRegistry = registry;
   }
 
   /**
@@ -140,9 +150,19 @@ export class SessionAnalyzer {
     const toolUsage = this.analyzeToolUsage(session.tool_events);
     const successRate = this.calculateSuccessRate(session.tool_events);
 
+    // Look up agent name from SessionRegistry
+    let agentName = 'default';
+    if (this.sessionRegistry) {
+      const sessionRecord = this.sessionRegistry.get(session.session_id);
+      if (sessionRecord) {
+        agentName = sessionRecord.agent_name;
+      }
+    }
+
     return {
       session_id: session.session_id,
       timestamp: new Date(session.start_time).toISOString(),
+      agent_name: agentName,
 
       // 上下文信息
       working_directory: session.start_data.working_directory || 'unknown',
@@ -176,9 +196,19 @@ export class SessionAnalyzer {
     const successRate = this.calculateSuccessRate(session.tool_events);
     const fileCount = session.files_modified.size;
 
+    // Look up agent name from SessionRegistry
+    let agentName = 'default';
+    if (this.sessionRegistry) {
+      const sessionRecord = this.sessionRegistry.get(session.session_id);
+      if (sessionRecord) {
+        agentName = sessionRecord.agent_name;
+      }
+    }
+
     return {
       session_id: session.session_id,
       timestamp: new Date(session.start_time).toISOString(),
+      agent_name: agentName,
       working_directory: session.start_data.working_directory || 'unknown',
       git_repo: session.start_data.git_repo || null,
       git_branch: session.start_data.git_branch || null,
