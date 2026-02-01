@@ -6,7 +6,6 @@
 [![CI](https://github.com/JhihJian/claude-daemon/workflows/CI/badge.svg)](https://github.com/JhihJian/claude-daemon/actions)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black?logo=bun)](https://bun.sh)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Test](https://img.shields.io/badge/Tests-51%2F53%20Passed-success)](docs/testing-reports/COMPREHENSIVE-TESTING-COMPLETE.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Code of Conduct](https://img.shields.io/badge/Code%20of%20Conduct-Contributor%20Covenant-purple.svg)](CODE_OF_CONDUCT.md)
 
@@ -195,7 +194,6 @@
 - ✅ **文档重组** - 将所有文档整理到 `docs/` 目录
   - 架构文档 (`docs/architecture/`)
   - 用户指南 (`docs/guides/`)
-  - 测试报告 (`docs/testing-reports/`)
   - 功能文档 (`docs/features/`)
   - 发布文档 (`docs/release/`)
 
@@ -537,7 +535,6 @@ claude-daemon/
 │   ├── architecture/             # 架构文档
 │   ├── guides/                   # 用户指南
 │   ├── features/                 # 功能文档
-│   ├── testing-reports/          # 测试报告
 │   ├── release/                  # 发布文档
 │   ├── demos/                    # 演示文档
 │   └── legacy/                   # 旧文档
@@ -580,13 +577,6 @@ claude-daemon/
 | 文档 | 说明 |
 |------|------|
 | [系统架构概览](docs/architecture/OVERVIEW.md) | 完整系统架构文档（包含守护进程实现、Agent 系统、集成架构） |
-
-### 测试报告
-| 文档 | 说明 |
-|------|------|
-| [综合测试报告](docs/testing-reports/COMPREHENSIVE-TESTING-COMPLETE.md) | v1.3.4 完整测试总结 |
-| [端到端测试](docs/testing-reports/E2E-TEST-REPORT.md) | E2E 测试结果 |
-| [Windows IPC 实现](docs/testing-reports/BUG-002-IMPLEMENTATION.md) | Windows 平台支持实现 |
 
 📖 **完整文档索引**: [docs/README.md](docs/README.md)
 
@@ -696,8 +686,6 @@ export WEB_HOST=127.0.0.1
 | Hook 错误处理 | ✅ 通过 | 6 个 hooks 防御性处理 |
 
 **总计**: 51/53 通过 (96%) | **状态**: ✅ 生产就绪
-
-详见 [综合测试报告](docs/testing-reports/COMPREHENSIVE-TESTING-COMPLETE.md)
 
 ---
 

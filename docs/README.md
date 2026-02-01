@@ -41,16 +41,6 @@ Legacy documentation (historical reference):
 - **WINDOWS-ISSUES.md** - Windows issues (legacy)
 - **WINDOWS-QUICKSTART.md** - Windows quick start (legacy)
 
-### `/testing-reports` - 测试报告
-Comprehensive testing documentation from v1.3.4 development:
-- **COMPREHENSIVE-TESTING-COMPLETE.md** - Complete testing summary
-- **E2E-TEST-REPORT.md** - End-to-end test results
-- **BUG-002-IMPLEMENTATION.md** - Windows IPC implementation
-- **BUG-003-ANALYSIS.md** - Hook error handling analysis
-- And 10 more testing and bug fix reports
-
-See [testing-reports/README.md](./testing-reports/README.md) for details.
-
 ---
 
 ## 📚 Main Documentation (Root Directory)
@@ -72,7 +62,6 @@ Essential documentation in the project root:
 ### For Developers
 - **Development Guide**: [CLAUDE.md](../CLAUDE.md)
 - **Architecture**: [architecture/](./architecture/)
-- **Testing Reports**: [testing-reports/](./testing-reports/)
 
 ### For Contributors
 - **Version History**: [CHANGELOG.md](../CHANGELOG.md)
