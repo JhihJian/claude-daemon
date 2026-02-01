@@ -183,6 +183,25 @@ export class WebServer {
   ): Promise<{ status: number; data: any }> {
     const segments = path.split('/').filter(Boolean);
 
+    // /api/configs/* - Agent configuration packages
+    if (segments[1] === 'configs' && this.agentsAPI) {
+      // GET /api/configs - List all agent configurations
+      if (segments.length === 2) {
+        const configs = await this.agentsAPI.listAgentConfigs();
+        return { status: 200, data: configs };
+      }
+
+      // GET /api/configs/:name - Get specific config
+      if (segments.length === 3 && segments[2]) {
+        const configName = segments[2];
+        const config = await this.agentsAPI.getAgentConfig(configName);
+        if (!config) {
+          return { status: 404, data: { error: 'Config not found' } };
+        }
+        return { status: 200, data: config };
+      }
+    }
+
     // /api/agents/*
     if (segments[1] === 'agents' && this.agentsAPI) {
       // GET /api/agents - List all agents
@@ -282,6 +301,13 @@ export class WebServer {
           return { status: 404, data: { error: 'Session not found' } };
         }
         return { status: 200, data: session };
+      }
+
+      // GET /api/sessions/:id/events - Get session events
+      if (segments.length === 4 && segments[3] === 'events') {
+        const sessionId = segments[2];
+        const events = await this.sessionsAPI.getSessionEvents(sessionId);
+        return { status: 200, data: events };
       }
     }
 

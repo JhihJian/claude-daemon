@@ -86,4 +86,14 @@ export class SessionsAPI {
 
     return { active, archived };
   }
+
+  /**
+   * Get events for a specific session
+   */
+  async getSessionEvents(sessionId: string): Promise<any[]> {
+    // Try to read events from storage
+    // The storage service will search across all year-month directories
+    const events = await this.storage.readSessionEvents(sessionId);
+    return events || [];
+  }
 }

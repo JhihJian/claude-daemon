@@ -257,7 +257,7 @@ class TerminalSidebar {
       };
 
       this.ws.onmessage = (event) => {
-        const data = JSON.parse(event.toString() + event.data);
+        const data = JSON.parse(event.data);
 
         if (data.type === 'agent_event' && data.event === 'agent_terminal_output') {
           this.appendOutput(data.data.sessionId, data.data.output);

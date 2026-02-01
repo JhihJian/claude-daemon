@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Session Detail - Claude Daemon</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Courier New', 'Consolas', monospace;
+      background: #0a0a0a;
+      color: #c9c9c9;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* Navigation */
+    .nav {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 20px;
+    }
+
+    .nav a {
+      color: #666666;
+      text-decoration: none;
+      padding: 8px 16px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border: 1px solid transparent;
+    }
+
+    .nav a:hover {
+      color: #ffb000;
+      border-color: #1a1a1a;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .header-left h1 {
+      color: #ffb000;
+      font-size: 20px;
+      font-weight: normal;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .header-left .subtitle {
+      color: #666666;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    .back-button {
+      background: #0f0f0f;
+      color: #666666;
+      border: 1px solid #1a1a1a;
+      padding: 6px 12px;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .back-button:hover {
+      background: #1a1a1a;
+      color: #ffb000;
+    }
+
+    /* Status Badge */
+    .status-badge {
+      padding: 3px 8px;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border: 1px solid;
+      display: inline-block;
+    }
+
+    .status-active {
+      color: #33ff33;
+      border-color: #33ff33;
+    }
+
+    .status-terminated {
+      color: #666666;
+      border-color: #666666;
+    }
+
+    .status-crashed {
+      color: #ff3333;
+      border-color: #ff3333;
+    }
+
+    /* Content Grid */
+    .content {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: #0f0f0f;
+      border: 1px solid #1a1a1a;
+      padding: 15px;
+    }
+
+    .card.full-width {
+      grid-column: 1 / -1;
+    }
+
+    .card-title {
+      color: #ffb000;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    /* Info Grid */
+    .info-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .info-label {
+      color: #666666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 10px;
+    }
+
+    .info-value {
+      color: #c9c9c9;
+      text-align: right;
+      max-width: 70%;
+      word-break: break-all;
+    }
+
+    .info-value code {
+      background: #0a0a0a;
+      padding: 2px 6px;
+      border: 1px solid #1a1a1a;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: #33ff33;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .stat-box {
+      background: #0a0a0a;
+      border: 1px solid #1a1a1a;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: bold;
+      color: #33ff33;
+      margin-bottom: 5px;
+    }
+
+    .stat-label {
+      font-size: 9px;
+      color: #666666;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Tool Stats */
+    .tool-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    .tool-item {
+      background: #0a0a0a;
+      padding: 10px;
+      border: 1px solid #1a1a1a;
+      border-left: 2px solid #ffb000;
+    }
+
+    .tool-name {
+      font-weight: bold;
+      color: #ffb000;
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+
+    .tool-count {
+      color: #666666;
+      font-size: 10px;
+    }
+
+    /* Files List */
+    .files-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .file-item {
+      background: #0a0a0a;
+      padding: 8px 12px;
+      border: 1px solid #1a1a1a;
+      margin-bottom: 5px;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: #33ff33;
+    }
+
+    /* Events Timeline */
+    .events-timeline {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .event-item {
+      background: #0a0a0a;
+      padding: 12px;
+      border: 1px solid #1a1a1a;
+      border-left: 2px solid #33ff33;
+      margin-bottom: 8px;
+    }
+
+    .event-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .event-type {
+      font-weight: bold;
+      color: #ffb000;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .event-time {
+      color: #666666;
+      font-size: 10px;
+    }
+
+    .event-data {
+      background: #0f0f0f;
+      padding: 8px;
+      border: 1px solid #1a1a1a;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: #c9c9c9;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: #666666;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #1a1a1a;
+      border-top-color: #ffb000;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 10px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Error */
+    .error {
+      background: #0f0f0f;
+      border: 1px solid #ff3333;
+      border-left: 3px solid #ff3333;
+      color: #ff3333;
+      padding: 15px;
+      margin: 20px 0;
+      font-size: 11px;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #666666;
+      font-size: 11px;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #0a0a0a;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #1a1a1a;
+      border: 1px solid #0a0a0a;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #333333;
+    }
+
+    @media (max-width: 768px) {
+      .content {
+        grid-template-columns: 1fr;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .tool-stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Navigation -->
+    <nav class="nav">
+      <a href="/sessions.html">Sessions</a>
+      <a href="/agents.html">Agents</a>
+      <a href="/configs.html">Configs</a>
+    </nav>
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <h1 id="session-title">Session Detail</h1>
+        <div class="subtitle" id="session-subtitle">Loading...</div>
+      </div>
+      <a href="sessions.html" class="back-button">← Back</a>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Loading session details...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="error" class="error" style="display: none;"></div>
+
+    <!-- Content -->
+    <div id="content" class="content" style="display: none;">
+      <!-- Session Overview -->
+      <div class="card">
+        <div class="card-title">Session Overview</div>
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-label">Session ID:</span>
+            <span class="info-value"><code id="session-id"></code></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Agent:</span>
+            <span class="info-value" id="agent-name"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Status:</span>
+            <span class="info-value" id="status"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Type:</span>
+            <span class="info-value" id="session-type"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">PID:</span>
+            <span class="info-value" id="pid"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Start Time:</span>
+            <span class="info-value" id="start-time"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">End Time:</span>
+            <span class="info-value" id="end-time"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Duration:</span>
+            <span class="info-value" id="duration"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Environment Info -->
+      <div class="card">
+        <div class="card-title">Environment</div>
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-label">Working Dir:</span>
+            <span class="info-value"><code id="working-dir"></code></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Git Repo:</span>
+            <span class="info-value" id="git-repo"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Git Branch:</span>
+            <span class="info-value" id="git-branch"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Hostname:</span>
+            <span class="info-value" id="hostname"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Statistics -->
+      <div class="card full-width">
+        <div class="card-title">Statistics</div>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-value" id="total-tools">0</div>
+            <div class="stat-label">Total Tools</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="success-rate">0%</div>
+            <div class="stat-label">Success Rate</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="files-modified">0</div>
+            <div class="stat-label">Files Modified</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="total-events">0</div>
+            <div class="stat-label">Total Events</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tool Usage -->
+      <div class="card full-width">
+        <div class="card-title">Tool Usage</div>
+        <div id="tool-stats" class="tool-stats"></div>
+      </div>
+
+      <!-- Files Modified -->
+      <div class="card full-width" id="files-section" style="display: none;">
+        <div class="card-title">Files Modified</div>
+        <div id="files-list" class="files-list"></div>
+      </div>
+
+      <!-- Events Timeline -->
+      <div class="card full-width" id="events-section" style="display: none;">
+        <div class="card-title">Events Timeline</div>
+        <div id="events-timeline" class="events-timeline"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Parse URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('id');
+    const sessionType = urlParams.get('type') || 'active';
+
+    if (!sessionId) {
+      showError('No session ID provided');
+    } else {
+      loadSessionDetail();
+    }
+
+    async function loadSessionDetail() {
+      try {
+        // Determine which endpoint to use based on type
+        let endpoint;
+        if (sessionType === 'active') {
+          endpoint = `/api/sessions/active/${sessionId}`;
+        } else {
+          endpoint = `/api/sessions/archive/${sessionId}`;
+        }
+
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const session = await response.json();
+
+        if (!session) {
+          throw new Error('Session not found');
+        }
+
+        // Try to fetch events if available
+        let events = [];
+        try {
+          const eventsResponse = await fetch(`/api/sessions/${sessionId}/events`);
+          if (eventsResponse.ok) {
+            events = await eventsResponse.json();
+          }
+        } catch (e) {
+          console.log('Events not available:', e);
+        }
+
+        displaySessionDetail(session, events);
+      } catch (error) {
+        console.error('Failed to load session:', error);
+        showError(`Failed to load session: ${error.message}`);
+      }
+    }
+
+    function displaySessionDetail(session, events) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('content').style.display = 'grid';
+
+      // Update title
+      document.getElementById('session-title').textContent = `Session: ${session.agent_name || 'Unknown'}`;
+      document.getElementById('session-subtitle').textContent = `ID: ${session.session_id}`;
+
+      // Session Overview
+      document.getElementById('session-id').textContent = session.session_id;
+      document.getElementById('agent-name').textContent = session.agent_name || 'default';
+
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${session.status}`;
+      statusBadge.textContent = session.status;
+      document.getElementById('status').appendChild(statusBadge);
+
+      document.getElementById('session-type').textContent = session.session_type || 'unknown';
+      document.getElementById('pid').textContent = session.pid || 'N/A';
+
+      // Timestamps
+      const startTime = new Date(session.start_time);
+      document.getElementById('start-time').textContent = startTime.toLocaleString();
+
+      if (session.end_time) {
+        const endTime = new Date(session.end_time);
+        document.getElementById('end-time').textContent = endTime.toLocaleString();
+
+        const duration = Math.floor((endTime - startTime) / 1000);
+        document.getElementById('duration').textContent = formatDuration(duration);
+      } else {
+        document.getElementById('end-time').textContent = 'Still active';
+
+        const duration = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('duration').textContent = formatDuration(duration) + ' (ongoing)';
+      }
+
+      // Environment
+      document.getElementById('working-dir').textContent = session.working_directory || 'N/A';
+      document.getElementById('git-repo').textContent = session.git_repo || 'N/A';
+      document.getElementById('git-branch').textContent = session.git_branch || 'N/A';
+      document.getElementById('hostname').textContent = session.hostname || 'N/A';
+
+      // Statistics
+      document.getElementById('total-tools').textContent = session.total_tools || 0;
+
+      const successRate = session.success_rate !== undefined
+        ? Math.round(session.success_rate * 100)
+        : 0;
+      document.getElementById('success-rate').textContent = successRate + '%';
+
+      const filesModified = session.files_modified ? session.files_modified.length : 0;
+      document.getElementById('files-modified').textContent = filesModified;
+
+      document.getElementById('total-events').textContent = (events || []).length;
+
+      // Tool Usage
+      if (session.tool_usage && Object.keys(session.tool_usage).length > 0) {
+        const toolStatsContainer = document.getElementById('tool-stats');
+        toolStatsContainer.innerHTML = '';
+
+        const sortedTools = Object.entries(session.tool_usage)
+          .sort((a, b) => b[1] - a[1]);
+
+        sortedTools.forEach(([tool, count]) => {
+          const toolItem = document.createElement('div');
+          toolItem.className = 'tool-item';
+          toolItem.innerHTML = `
+            <div class="tool-name">${tool}</div>
+            <div class="tool-count">${count} uses</div>
+          `;
+          toolStatsContainer.appendChild(toolItem);
+        });
+      } else {
+        document.getElementById('tool-stats').innerHTML = '<div class="empty-state">No tool usage data</div>';
+      }
+
+      // Files Modified
+      if (session.files_modified && session.files_modified.length > 0) {
+        document.getElementById('files-section').style.display = 'block';
+        const filesContainer = document.getElementById('files-list');
+        filesContainer.innerHTML = '';
+
+        session.files_modified.forEach(file => {
+          const fileItem = document.createElement('div');
+          fileItem.className = 'file-item';
+          fileItem.textContent = file;
+          filesContainer.appendChild(fileItem);
+        });
+      }
+
+      // Events Timeline
+      if (events && events.length > 0) {
+        document.getElementById('events-section').style.display = 'block';
+        const eventsContainer = document.getElementById('events-timeline');
+        eventsContainer.innerHTML = '';
+
+        events.forEach(event => {
+          const eventItem = document.createElement('div');
+          eventItem.className = 'event-item';
+
+          const eventTime = new Date(event.timestamp);
+
+          eventItem.innerHTML = `
+            <div class="event-header">
+              <span class="event-type">${event.event_type}</span>
+              <span class="event-time">${eventTime.toLocaleString()}</span>
+            </div>
+            <div class="event-data">${JSON.stringify(event.data, null, 2)}</div>
+          `;
+
+          eventsContainer.appendChild(eventItem);
+        });
+      }
+    }
+
+    function formatDuration(seconds) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+
+      if (hours > 0) {
+        return `${hours}h ${minutes}m ${secs}s`;
+      } else if (minutes > 0) {
+        return `${minutes}m ${secs}s`;
+      } else {
+        return `${secs}s`;
+      }
+    }
+
+    function showError(message) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error').style.display = 'block';
+      document.getElementById('error').textContent = message;
+    }
+
+    // WebSocket for real-time updates (for active sessions)
+    if (sessionType === 'active') {
+      const ws = new WebSocket('ws://127.0.0.1:3001/ws');
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'session_update' && data.sessionId === sessionId) {
+            // Reload session data
+            loadSessionDetail();
+          }
+        } catch (error) {
+          console.error('WebSocket message error:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+    }
+  </script>
+</body>
+</html>

@@ -13,10 +13,32 @@ export class AgentsAPI {
   ) {}
 
   /**
-   * List all agent configurations
+   * List all active agent sessions (for the agents dashboard)
    */
-  async listAgents(): Promise<AgentDefinition[]> {
-    return this.agentRegistry.getAll();
+  async listAgents(): Promise<any[]> {
+    const activeSessions = this.sessionRegistry.getActive();
+
+    return activeSessions.map(session => {
+      const agent = this.agentRegistry.get(session.agent_name);
+      const agentType = agent?.configJson?.agentType || 'worker';
+      const startTime = new Date(session.start_time).getTime();
+      const uptime = Date.now() - startTime;
+
+      return {
+        sessionId: session.session_id,
+        label: session.agent_name,
+        type: agentType,
+        status: session.status === 'active' ? 'idle' : 'disconnected',
+        agentConfig: session.agent_name,
+        uptime: uptime,
+        createdAt: startTime,
+        lastHeartbeat: Date.now(), // TODO: Track actual heartbeats
+        workingDirectory: session.working_directory,
+        gitRepo: session.git_repo,
+        gitBranch: session.git_branch,
+        pid: session.pid,
+      };
+    });
   }
 
   /**
@@ -83,5 +105,44 @@ export class AgentsAPI {
 
     const keys = Object.keys(agent.environment);
     return { keys, count: keys.length };
+  }
+
+  /**
+   * List all agent configuration packages (for configs page)
+   */
+  async listAgentConfigs(): Promise<any[]> {
+    const agents = this.agentRegistry.getAll();
+
+    return agents.map(agent => ({
+      name: agent.name,
+      path: agent.configPath || 'built-in',
+      hasClaudeMd: !!agent.claudeMd,
+      hasConfig: !!agent.configJson,
+      description: agent.description,
+      version: agent.version,
+    }));
+  }
+
+  /**
+   * Get detailed agent configuration (for configs page)
+   */
+  async getAgentConfig(name: string): Promise<any | null> {
+    const agent = this.agentRegistry.get(name);
+    if (!agent) {
+      return null;
+    }
+
+    return {
+      name: agent.name,
+      path: agent.configPath || 'built-in',
+      hasClaudeMd: !!agent.claudeMd,
+      hasConfig: !!agent.configJson,
+      description: agent.description,
+      version: agent.version,
+      claudeMd: agent.claudeMd,
+      config: agent.configJson,
+      skills: agent.skills || [],
+      mcpServers: agent.mcpServers || [],
+    };
   }
 }

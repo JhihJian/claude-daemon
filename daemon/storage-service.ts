@@ -341,6 +341,7 @@ export class StorageService {
 
   /**
    * Query archived sessions with filters
+   * Supports both new archive format (JSONL) and old summary format (individual JSON files)
    */
   async queryArchive(filters: {
     agentName?: string;
@@ -350,49 +351,104 @@ export class StorageService {
     limit?: number;
   }): Promise<SessionRecord[]> {
     try {
-      const archiveDir = join(this.cfg.sessionsDir, 'archive');
-
-      if (!existsSync(archiveDir)) {
-        return [];
-      }
-
       const results: SessionRecord[] = [];
       const yearMonths = this.getYearMonthsInRange(filters.startDate, filters.endDate);
 
-      for (const yearMonth of yearMonths) {
-        const archivePath = join(archiveDir, yearMonth, 'sessions.jsonl');
+      // Read from new archive format (JSONL)
+      const archiveDir = join(this.cfg.sessionsDir, 'archive');
+      if (existsSync(archiveDir)) {
+        for (const yearMonth of yearMonths) {
+          const archivePath = join(archiveDir, yearMonth, 'sessions.jsonl');
 
-        if (!existsSync(archivePath)) {
-          continue;
+          if (!existsSync(archivePath)) {
+            continue;
+          }
+
+          const content = await readFile(archivePath, 'utf-8');
+          const lines = content.trim().split('\n');
+
+          for (const line of lines) {
+            if (!line) continue;
+
+            const session = safeJSONParse<SessionRecord>(line, null as any, 'archived session');
+            if (!session) continue;
+
+            // Apply filters
+            if (filters.agentName && session.agent_name !== filters.agentName) {
+              continue;
+            }
+
+            if (filters.workingDirectory && session.working_directory !== filters.workingDirectory) {
+              continue;
+            }
+
+            if (filters.startDate && session.start_time < filters.startDate) {
+              continue;
+            }
+
+            if (filters.endDate && session.start_time > filters.endDate) {
+              continue;
+            }
+
+            results.push(session);
+          }
         }
+      }
 
-        const content = await readFile(archivePath, 'utf-8');
-        const lines = content.trim().split('\n');
+      // Read from old summary format (individual JSON files)
+      const summariesDir = this.cfg.summariesDir;
+      if (existsSync(summariesDir)) {
+        for (const yearMonth of yearMonths) {
+          const summaryDir = join(summariesDir, yearMonth);
 
-        for (const line of lines) {
-          if (!line) continue;
-
-          const session = safeJSONParse<SessionRecord>(line, null as any, 'archived session');
-          if (!session) continue;
-
-          // Apply filters
-          if (filters.agentName && session.agent_name !== filters.agentName) {
+          if (!existsSync(summaryDir)) {
             continue;
           }
 
-          if (filters.workingDirectory && session.working_directory !== filters.workingDirectory) {
-            continue;
-          }
+          const { readdirSync } = await import('fs');
+          const files = readdirSync(summaryDir);
 
-          if (filters.startDate && session.start_time < filters.startDate) {
-            continue;
-          }
+          for (const file of files) {
+            if (!file.endsWith('.json')) continue;
 
-          if (filters.endDate && session.start_time > filters.endDate) {
-            continue;
-          }
+            const filePath = join(summaryDir, file);
+            const content = await readFile(filePath, 'utf-8');
+            const summary = safeJSONParse<any>(content, null, 'session summary');
 
-          results.push(session);
+            if (!summary) continue;
+
+            // Convert old summary format to SessionRecord format
+            const session: SessionRecord = {
+              session_id: summary.session_id,
+              agent_name: 'default', // Old summaries don't have agent_name
+              pid: 0, // Old summaries don't have PID
+              status: 'terminated',
+              start_time: summary.timestamp,
+              end_time: new Date(new Date(summary.timestamp).getTime() + summary.duration_seconds * 1000).toISOString(),
+              working_directory: summary.working_directory,
+              git_repo: summary.git_repo,
+              git_branch: summary.git_branch,
+            };
+
+            // Apply filters
+            if (filters.agentName && session.agent_name !== filters.agentName) {
+              continue;
+            }
+
+            if (filters.workingDirectory && session.working_directory !== filters.workingDirectory) {
+              continue;
+            }
+
+            if (filters.startDate && session.start_time < filters.startDate) {
+              continue;
+            }
+
+            if (filters.endDate && session.start_time > filters.endDate) {
+              continue;
+            }
+
+            results.push(session);
+          }
         }
       }
 

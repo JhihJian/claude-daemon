@@ -662,7 +662,7 @@ if (import.meta.main) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
 
-    if (arg === '--web' || arg === '-w') {
+    if (arg === '--web' || arg === '-w' || arg === '--enable-web-ui') {
       enableWebUI = true;
     } else if (arg === '--port' || arg === '-p') {
       const portValue = args[i + 1];
@@ -684,10 +684,10 @@ Usage:
   bun daemon/main.ts [options]
 
 Options:
-  --web, -w           Enable Web UI
-  --port, -p <port>   Web UI port (default: 3001)
-  --host, -H <host>   Web UI host (default: 127.0.0.1)
-  --help, -h          Show this help message
+  --web, -w, --enable-web-ui   Enable Web UI
+  --port, -p <port>            Web UI port (default: 3001)
+  --host, -H <host>            Web UI host (default: 127.0.0.1)
+  --help, -h                   Show this help message
 
 Examples:
   bun daemon/main.ts --web
