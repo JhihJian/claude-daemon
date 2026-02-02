@@ -50,11 +50,18 @@ mkdir -p ~/.claude/SESSIONS/analysis/by-type
 mkdir -p ~/.claude/SESSIONS/analysis/by-directory
 mkdir -p ~/.claude/SESSIONS/index
 mkdir -p ~/.claude/hooks
+mkdir -p ~/.claude/sessions/scripts
+mkdir -p ~/.claude/sessions/metadata
+mkdir -p ~/.claude/agent-configs
 
 # 设置目录权限：700（仅所有者可访问）
 chmod 700 ~/.claude/SESSIONS
 chmod -R 700 ~/.claude/SESSIONS/*
 chmod 700 ~/.claude/hooks
+chmod 700 ~/.claude/sessions
+chmod 700 ~/.claude/sessions/scripts
+chmod 700 ~/.claude/sessions/metadata
+chmod 700 ~/.claude/agent-configs
 
 echo -e "${GREEN}✓ 目录创建完成（权限：700）${NC}"
 echo ""

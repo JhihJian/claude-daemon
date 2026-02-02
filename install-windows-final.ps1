@@ -65,7 +65,10 @@ $Directories = @(
     (Join-Path $SessionsDir "index"),
     (Join-Path $ClaudeDir "hooks"),
     (Join-Path $ClaudeDir "lib"),
-    (Join-Path $ClaudeDir "tools")
+    (Join-Path $ClaudeDir "tools"),
+    (Join-Path $ClaudeDir "sessions\scripts"),
+    (Join-Path $ClaudeDir "sessions\metadata"),
+    (Join-Path $ClaudeDir "agent-configs")
 )
 
 foreach ($Dir in $Directories) {
