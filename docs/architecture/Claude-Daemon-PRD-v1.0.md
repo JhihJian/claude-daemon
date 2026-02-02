@@ -1,8 +1,8 @@
 # Claude Daemon - 产品需求文档 (PRD)
 
-**版本:** 1.0  
+**版本:** 1.1  
 **日期:** 2025年2月  
-**项目定位:** Claude Code CLI 进程管理守护服务
+**项目定位:** Claude Code CLI 进程管理与 Session 分析服务
 
 ---
 
@@ -10,73 +10,137 @@
 
 ### 1.1 项目定位
 
-Claude Daemon 是一个常驻后台服务，负责管理不同配置的 Claude Code CLI 进程。它提供命令行接口，支持启动、停止、查询 Session，以及向运行中的 Session 注入消息，实现多 Agent 协同工作。
+Claude Daemon（简称 `cld`）是一个常驻后台服务，提供两大核心能力：
+
+1. **进程管理**：管理不同配置的 Claude Code CLI 进程，支持启动、停止、查询、消息注入
+2. **Session 分析**：通过 Hook 机制记录、分类、分析 Claude Code Session 的执行过程
 
 ### 1.2 与其他项目的关系
 
 | 项目 | 关系 |
 |-----|------|
-| SUMM Console | Console 后端通过命令行调用 Daemon 命令管理进程 |
+| SUMM Console | Console 后端通过 `cld` 命令管理进程、查询 Session 数据 |
 | SUMM Agent | Daemon 启动的 SUMM 主代理使用 SUMM Agent 定义的配置 |
 
 ### 1.3 核心能力
 
-1. **进程管理**：启动、停止、查询 Claude Code CLI 进程
-2. **配置管理**：管理不同 Agent 的配置（Skills、CLAUDE.md、MCP、环境变量）
-3. **消息注入**：向运行中的 Session 注入消息，支持 Agent 间协同
-4. **Tracing**：通过 Hook 记录 Session/项目/过程信息
+| 能力 | 说明 |
+|-----|------|
+| 进程管理 | 启动、停止、查询 Claude Code CLI 进程 |
+| 配置管理 | 管理不同 Agent 的配置（Skills、CLAUDE.md、MCP、环境变量） |
+| 消息注入 | 向运行中的 Session 注入消息，支持 Agent 间协同 |
+| Tracing | 通过 Hook 记录 Session/项目/过程信息 |
+| Session 分析 | 智能分类、统计分析、多维索引 |
+| Web UI | Session 历史可视化（可选） |
 
 ---
 
 ## 2. 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Claude Daemon                          │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐  │
-│  │   CLI 接口      │  │   进程管理器     │  │  配置管理   │  │
-│  │  - cld start   │  │  - 启动进程      │  │  - Agent    │  │
-│  │  - cld stop    │  │  - 停止进程      │  │  - 环境     │  │
-│  │  - cld list    │  │  - 状态维护      │  │  - Hook     │  │
-│  │  - cld inject  │  │  - IO 转发       │  │             │  │
-│  │  - cld attach  │  └────────┬────────┘  └─────────────┘  │
-│  └────────┬────────┘           │                            │
-│           │                    ▼                            │
-│           │         ┌─────────────────────┐                 │
-│           │         │   Session 池        │                 │
-│           │         │  ┌───┐ ┌───┐ ┌───┐  │                 │
-│           │         │  │S1 │ │S2 │ │S3 │  │                 │
-│           │         │  └───┘ └───┘ └───┘  │                 │
-│           │         └─────────────────────┘                 │
-│           │                    │                            │
-│  ┌────────▼────────────────────▼────────┐                   │
-│  │            Tracing 模块              │                   │
-│  │  - Session Hook                      │                   │
-│  │  - 过程记录                          │                   │
-│  └──────────────────────────────────────┘                   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌───────────────────┐
-                    │ Claude Code CLI   │
-                    │    (多实例)        │
-                    └───────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Claude Daemon (cld)                           │
+│                                                                         │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐  │
+│  │   CLI 接口      │  │   进程管理器     │  │      配置管理           │  │
+│  │  - cld start   │  │  - 启动进程      │  │  - Agent 配置           │  │
+│  │  - cld stop    │  │  - 停止进程      │  │  - 环境变量             │  │
+│  │  - cld list    │  │  - PID 跟踪      │  │  - MCP/Skills           │  │
+│  │  - cld inject  │  │  - 健康监控      │  │                         │  │
+│  │  - cld attach  │  │  - IO 管理       │  │                         │  │
+│  └────────┬────────┘  └────────┬────────┘  └─────────────────────────┘  │
+│           │                    │                                        │
+│           │                    ▼                                        │
+│           │         ┌─────────────────────┐                             │
+│           │         │    Session 池       │                             │
+│           │         │  ┌───┐ ┌───┐ ┌───┐  │                             │
+│           │         │  │S1 │ │S2 │ │S3 │  │  ← 运行中的 Claude Code    │
+│           │         │  └───┘ └───┘ └───┘  │    CLI 进程                │
+│           │         └─────────────────────┘                             │
+│           │                    │                                        │
+│  ┌────────▼────────────────────▼────────────────────────────────────┐   │
+│  │                      Tracing 模块                                │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │   │
+│  │  │  Hook Server │  │  Event Queue │  │  Session Analyzer    │   │   │
+│  │  │  (接收事件)   │  │  (事件缓冲)   │  │  (分类/统计/索引)    │   │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────────────┘   │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                 │                                       │
+│                                 ▼                                       │
+│                    ┌─────────────────────────┐                          │
+│                    │     Storage Service     │                          │
+│                    │  - JSONL 事件日志       │                          │
+│                    │  - Session 元数据       │                          │
+│                    │  - 分类索引             │                          │
+│                    └─────────────────────────┘                          │
+│                                 │                                       │
+│                                 ▼                                       │
+│                    ┌─────────────────────────┐                          │
+│                    │    Web UI (可选)        │                          │
+│                    │  - Session 历史浏览     │                          │
+│                    │  - 统计图表             │                          │
+│                    └─────────────────────────┘                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Agent 配置管理
+## 3. 目录结构
 
-### 3.1 配置项
+```
+~/.claude-daemon/
+├── config.json                  # Daemon 全局配置
+├── daemon.pid                   # Daemon 进程 PID 文件
+├── daemon.sock                  # Unix Socket（IPC 通信）
+│
+├── agents/                      # Agent 配置目录
+│   ├── SUMM/
+│   │   ├── agent.json           # Agent 配置
+│   │   ├── CLAUDE.md            # 系统提示词
+│   │   ├── skills/              # Skill 文件
+│   │   └── mcp.json             # MCP 配置
+│   ├── DEV-AGENT/
+│   │   └── ...
+│   └── TEST-AGENT/
+│       └── ...
+│
+├── sessions/                    # Session 数据目录
+│   ├── session_001/
+│   │   ├── meta.json            # Session 元信息
+│   │   ├── workspace/           # Session 工作目录
+│   │   └── trace/               # Tracing 数据
+│   │       ├── events.jsonl     # 原始事件日志
+│   │       ├── summary.json     # 分析摘要
+│   │       └── classification.json  # 分类结果
+│   └── session_002/
+│       └── ...
+│
+├── index/                       # 索引目录
+│   ├── by-agent.json            # 按 Agent 类型索引
+│   ├── by-date.json             # 按日期索引
+│   ├── by-type.json             # 按 Session 类型索引
+│   └── by-project.json          # 按项目索引
+│
+└── logs/                        # 日志目录
+    ├── daemon.log               # Daemon 日志
+    └── error.log                # 错误日志
+```
+
+---
+
+## 4. Agent 配置管理
+
+### 4.1 配置项
 
 每个 Agent 类型包含以下配置：
 
 | 配置项 | 说明 | 示例 |
 |-------|------|------|
 | name | Agent 类型名称 | `SUMM`, `DEV-AGENT`, `TEST-AGENT` |
-| skills | Skill 文件路径列表 | `["/path/to/skill1.md", "/path/to/skill2.md"]` |
-| claude_md | CLAUDE.md 文件路径 | `/path/to/CLAUDE.md` |
-| mcp_config | MCP 配置文件路径 | `/path/to/mcp.json` |
+| description | Agent 描述 | `开发任务执行 Agent` |
+| skills | Skill 文件路径列表 | `["skills/coding.md"]` |
+| claude_md | CLAUDE.md 文件路径 | `CLAUDE.md` |
+| mcp_config | MCP 配置文件路径 | `mcp.json` |
 | env | 环境变量 | 见下表 |
 
 **环境变量配置：**
@@ -88,31 +152,7 @@ Claude Daemon 是一个常驻后台服务，负责管理不同配置的 Claude C
 | ANTHROPIC_BASE_URL | Anthropic API 地址 |
 | ANTHROPIC_AUTH_TOKEN | Anthropic 认证令牌 |
 
-### 3.2 配置文件结构
-
-```
-~/.claude-daemon/
-├── config.json              # Daemon 全局配置
-├── agents/                  # Agent 配置目录
-│   ├── SUMM/
-│   │   ├── agent.json       # Agent 配置
-│   │   ├── CLAUDE.md        # 系统提示词
-│   │   ├── skills/          # Skill 文件
-│   │   └── mcp.json         # MCP 配置
-│   ├── DEV-AGENT/
-│   │   └── ...
-│   └── TEST-AGENT/
-│       └── ...
-├── sessions/                # Session 运行时数据
-│   ├── session_001/
-│   │   ├── meta.json        # Session 元信息
-│   │   └── trace/           # Tracing 数据
-│   └── session_002/
-│       └── ...
-└── logs/                    # 日志目录
-```
-
-### 3.3 Agent 配置文件格式 (agent.json)
+### 4.2 Agent 配置文件格式 (agent.json)
 
 ```json
 {
@@ -134,27 +174,32 @@ Claude Daemon 是一个常驻后台服务，负责管理不同配置的 Claude C
 
 ---
 
-## 4. 命令行接口
+## 5. 命令行接口
 
-### 4.1 命令概览
+### 5.1 命令概览
 
-| 命令 | 说明 |
-|-----|------|
-| `cld start` | 启动新 Session |
-| `cld stop` | 停止 Session |
-| `cld list` | 列出所有 Session |
-| `cld status` | 查询 Session 状态 |
-| `cld attach` | 连接到 Session 终端 |
-| `cld inject` | 向 Session 注入消息 |
-| `cld agent list` | 列出所有 Agent 配置 |
-| `cld agent show` | 查看 Agent 配置详情 |
-| `cld daemon start` | 启动守护进程 |
-| `cld daemon stop` | 停止守护进程 |
-| `cld daemon status` | 查看守护进程状态 |
+| 分类 | 命令 | 说明 |
+|-----|-----|------|
+| **进程管理** | `cld start` | 启动新 Session |
+| | `cld stop` | 停止 Session |
+| | `cld list` | 列出所有 Session |
+| | `cld status` | 查询 Session 状态 |
+| | `cld attach` | 连接到 Session 终端 |
+| | `cld inject` | 向 Session 注入消息 |
+| **Agent 管理** | `cld agent list` | 列出所有 Agent 配置 |
+| | `cld agent show` | 查看 Agent 配置详情 |
+| **Session 分析** | `cld sessions list` | 列出历史 Session |
+| | `cld sessions show` | 查看 Session 详情 |
+| | `cld sessions delete` | 删除 Session 数据 |
+| **Daemon 管理** | `cld daemon start` | 启动守护进程 |
+| | `cld daemon stop` | 停止守护进程 |
+| | `cld daemon status` | 查看守护进程状态 |
+| **安装配置** | `cld install` | 安装 Hooks |
+| | `cld uninstall` | 卸载 Hooks |
 
-### 4.2 命令详细说明
+### 5.2 进程管理命令
 
-#### 4.2.1 cld start
+#### 5.2.1 cld start
 
 启动新的 Claude Code CLI Session。
 
@@ -167,8 +212,16 @@ cld start --agent <agent-name> --workdir <path> [--name <session-name>]
 | 参数 | 必填 | 说明 |
 |-----|------|------|
 | --agent | 是 | Agent 类型名称 |
-| --workdir | 是 | 工作目录路径 |
+| --workdir | 是 | 工作目录路径（用户项目目录） |
 | --name | 否 | 自定义 Session 名称，默认自动生成 |
+
+**行为：**
+1. 验证 Agent 配置存在
+2. 创建 Session 目录 `~/.claude-daemon/sessions/<session_id>/`
+3. 复制 Agent 配置到 Session 工作空间
+4. 启动 Claude Code CLI 进程
+5. 记录 PID，开始监控
+6. 返回 Session 信息
 
 **输出：**
 
@@ -177,19 +230,19 @@ cld start --agent <agent-name> --workdir <path> [--name <session-name>]
   "session_id": "session_001",
   "name": "DEV-AGENT-001",
   "agent": "DEV-AGENT",
-  "workdir": "/path/to/workdir",
+  "workdir": "/path/to/project",
   "status": "running",
   "pid": 12345,
   "created_at": "2025-02-01T10:00:00Z"
 }
 ```
 
-#### 4.2.2 cld stop
+#### 5.2.2 cld stop
 
 停止指定 Session。
 
 ```bash
-cld stop <session-id>
+cld stop <session-id> [--force]
 ```
 
 **参数：**
@@ -197,22 +250,24 @@ cld stop <session-id>
 | 参数 | 必填 | 说明 |
 |-----|------|------|
 | session-id | 是 | Session ID 或名称 |
+| --force | 否 | 强制终止（SIGKILL） |
 
 **输出：**
 
 ```json
 {
   "session_id": "session_001",
-  "status": "stopped"
+  "status": "stopped",
+  "stopped_at": "2025-02-01T12:00:00Z"
 }
 ```
 
-#### 4.2.3 cld list
+#### 5.2.3 cld list
 
-列出所有 Session。
+列出所有运行中的 Session。
 
 ```bash
-cld list [--status <status>] [--agent <agent-name>]
+cld list [--status <status>] [--agent <agent-name>] [--all]
 ```
 
 **参数：**
@@ -221,6 +276,7 @@ cld list [--status <status>] [--agent <agent-name>]
 |-----|------|------|
 | --status | 否 | 过滤状态：running / idle |
 | --agent | 否 | 过滤 Agent 类型 |
+| --all | 否 | 包含已停止的 Session |
 
 **输出：**
 
@@ -231,25 +287,18 @@ cld list [--status <status>] [--agent <agent-name>]
       "session_id": "session_001",
       "name": "DEV-AGENT-001",
       "agent": "DEV-AGENT",
-      "workdir": "/path/to/workdir",
+      "workdir": "/path/to/project",
       "status": "running",
       "task_desc": "实现用户认证模块",
-      "created_at": "2025-02-01T10:00:00Z"
-    },
-    {
-      "session_id": "session_002",
-      "name": "TEST-AGENT-001",
-      "agent": "TEST-AGENT",
-      "workdir": "/path/to/test",
-      "status": "idle",
-      "task_desc": "",
-      "created_at": "2025-02-01T11:00:00Z"
+      "pid": 12345,
+      "created_at": "2025-02-01T10:00:00Z",
+      "last_activity": "2025-02-01T12:30:00Z"
     }
   ]
 }
 ```
 
-#### 4.2.4 cld status
+#### 5.2.4 cld status
 
 查询单个 Session 的详细状态。
 
@@ -264,16 +313,21 @@ cld status <session-id>
   "session_id": "session_001",
   "name": "DEV-AGENT-001",
   "agent": "DEV-AGENT",
-  "workdir": "/path/to/workdir",
+  "workdir": "/path/to/project",
   "status": "running",
   "task_desc": "实现用户认证模块",
   "pid": 12345,
   "created_at": "2025-02-01T10:00:00Z",
-  "last_activity": "2025-02-01T12:30:00Z"
+  "last_activity": "2025-02-01T12:30:00Z",
+  "stats": {
+    "duration_seconds": 9000,
+    "tool_calls": 45,
+    "files_modified": 12
+  }
 }
 ```
 
-#### 4.2.5 cld attach
+#### 5.2.5 cld attach
 
 连接到 Session 的终端，进行交互式操作。
 
@@ -284,9 +338,9 @@ cld attach <session-id>
 **行为：**
 - 连接到指定 Session 的 stdin/stdout
 - 支持实时交互
-- Ctrl+D 或特定快捷键退出（不终止 Session）
+- `Ctrl+D` 退出（不终止 Session）
 
-#### 4.2.6 cld inject
+#### 5.2.6 cld inject
 
 向运行中的 Session 注入消息。
 
@@ -309,7 +363,8 @@ cld inject <session-id> --file <file-path>
 {
   "session_id": "session_001",
   "injected": true,
-  "message_length": 128
+  "message_length": 128,
+  "timestamp": "2025-02-01T12:30:00Z"
 }
 ```
 
@@ -318,7 +373,9 @@ cld inject <session-id> --file <file-path>
 - 传递上游 Session 的输出结果
 - 系统级通知或指令
 
-#### 4.2.7 cld agent list
+### 5.3 Agent 管理命令
+
+#### 5.3.1 cld agent list
 
 列出所有已配置的 Agent。
 
@@ -333,21 +390,19 @@ cld agent list
   "agents": [
     {
       "name": "SUMM",
-      "description": "SUMM 主代理"
+      "description": "SUMM 主代理",
+      "skills_count": 5
     },
     {
       "name": "DEV-AGENT",
-      "description": "开发任务执行 Agent"
-    },
-    {
-      "name": "TEST-AGENT",
-      "description": "测试任务执行 Agent"
+      "description": "开发任务执行 Agent",
+      "skills_count": 3
     }
   ]
 }
 ```
 
-#### 4.2.8 cld agent show
+#### 5.3.2 cld agent show
 
 查看 Agent 配置详情。
 
@@ -361,12 +416,13 @@ cld agent show <agent-name>
 {
   "name": "DEV-AGENT",
   "description": "开发任务执行 Agent",
+  "path": "~/.claude-daemon/agents/DEV-AGENT",
   "skills": [
-    "/home/user/.claude-daemon/agents/DEV-AGENT/skills/coding.md",
-    "/home/user/.claude-daemon/agents/DEV-AGENT/skills/git.md"
+    "skills/coding.md",
+    "skills/git.md"
   ],
-  "claude_md": "/home/user/.claude-daemon/agents/DEV-AGENT/CLAUDE.md",
-  "mcp_config": "/home/user/.claude-daemon/agents/DEV-AGENT/mcp.json",
+  "claude_md": "CLAUDE.md",
+  "mcp_config": "mcp.json",
   "env": {
     "HTTP_PROXY": "http://proxy:8080",
     "ANTHROPIC_BASE_URL": "https://api.anthropic.com"
@@ -374,134 +430,371 @@ cld agent show <agent-name>
 }
 ```
 
-#### 4.2.9 cld daemon start/stop/status
+### 5.4 Session 分析命令
 
-管理守护进程本身。
+#### 5.4.1 cld sessions list
+
+列出历史 Session 记录。
+
+```bash
+cld sessions list [--agent <agent>] [--type <type>] [--date <date>] [--limit <n>]
+```
+
+**参数：**
+
+| 参数 | 必填 | 说明 |
+|-----|------|------|
+| --agent | 否 | 过滤 Agent 类型 |
+| --type | 否 | 过滤 Session 类型（分类结果） |
+| --date | 否 | 过滤日期（YYYY-MM-DD） |
+| --limit | 否 | 返回数量限制，默认 20 |
+
+**输出：**
+
+```json
+{
+  "sessions": [
+    {
+      "session_id": "session_001",
+      "agent": "DEV-AGENT",
+      "classification": "coding",
+      "duration_seconds": 3600,
+      "tool_usage": {"Edit": 15, "Read": 23, "Bash": 8},
+      "files_modified": ["src/auth.ts", "src/login.ts"],
+      "created_at": "2025-02-01T10:00:00Z",
+      "completed_at": "2025-02-01T11:00:00Z"
+    }
+  ],
+  "total": 156
+}
+```
+
+#### 5.4.2 cld sessions show
+
+查看 Session 详细信息。
+
+```bash
+cld sessions show <session-id> [--trace] [--summary]
+```
+
+**参数：**
+
+| 参数 | 必填 | 说明 |
+|-----|------|------|
+| --trace | 否 | 包含完整 Trace 事件 |
+| --summary | 否 | 包含 AI 生成的摘要 |
+
+#### 5.4.3 cld sessions delete
+
+删除 Session 数据。
+
+```bash
+cld sessions delete <session-id>
+cld sessions delete --before <date>
+```
+
+### 5.5 Daemon 管理命令
+
+#### 5.5.1 cld daemon start
+
+启动守护进程。
 
 ```bash
 cld daemon start [--port <port>]
+```
+
+#### 5.5.2 cld daemon stop
+
+停止守护进程。
+
+```bash
 cld daemon stop
+```
+
+#### 5.5.3 cld daemon status
+
+查看守护进程状态。
+
+```bash
 cld daemon status
 ```
 
----
-
-## 5. Tracing 模块
-
-### 5.1 功能概述
-
-通过 Claude Code 原生 Hook 机制，记录 Session 执行过程中的关键信息。
-
-### 5.2 Hook 类型
-
-根据 Claude Code 支持的 Hook，记录以下信息：
-
-| Hook 类型 | 记录内容 |
-|----------|---------|
-| 会话开始/结束 | 时间戳、Session ID、Agent 类型 |
-| 用户输入 | 输入内容、时间戳 |
-| 模型响应 | 响应内容、Token 使用量 |
-| 工具调用 | 工具名称、参数、结果 |
-| 文件操作 | 文件路径、操作类型（读/写/删除） |
-
-### 5.3 Tracing 数据存储
-
-每个 Session 的 Tracing 数据存储在独立目录：
-
-```
-~/.claude-daemon/sessions/<session_id>/trace/
-├── session.jsonl      # Session 级别事件
-├── messages.jsonl     # 消息记录
-├── tools.jsonl        # 工具调用记录
-└── files.jsonl        # 文件操作记录
-```
-
-**数据格式（JSONL）：**
+**输出：**
 
 ```json
-{"timestamp": "2025-02-01T10:00:00Z", "event": "session_start", "session_id": "session_001", "agent": "DEV-AGENT"}
-{"timestamp": "2025-02-01T10:00:05Z", "event": "user_input", "content": "实现用户登录功能"}
-{"timestamp": "2025-02-01T10:00:10Z", "event": "tool_call", "tool": "write_file", "params": {"path": "/src/login.js"}}
+{
+  "status": "running",
+  "pid": 9876,
+  "uptime_seconds": 86400,
+  "active_sessions": 3,
+  "total_sessions_tracked": 156,
+  "hook_server": "listening",
+  "web_ui": "http://localhost:3000"
+}
 ```
 
-### 5.4 Cowork 支持
+### 5.6 安装配置命令
 
-Tracing 模块同时支持 Cowork（消息注入）功能的实现：
+#### 5.6.1 cld install
 
-1. `cld inject` 命令触发消息注入
-2. 通过 Hook 机制将消息传递给目标 Session
-3. 消息以特定格式注入，确保 Claude Code 正确处理
+安装 Claude Code Hooks。
+
+```bash
+cld install
+```
+
+**行为：**
+- 配置 Claude Code 的 Hook 指向 Daemon
+- 创建必要的目录结构
+- 验证安装成功
+
+#### 5.6.2 cld uninstall
+
+卸载 Hooks。
+
+```bash
+cld uninstall
+```
 
 ---
 
-## 6. Session 数据模型
+## 6. 进程管理模块
 
-### 6.1 Session 元信息 (meta.json)
+### 6.1 进程生命周期
+
+```
+创建请求 → 验证配置 → 创建工作空间 → 启动进程 → 监控运行 → 停止/异常退出 → 清理
+```
+
+### 6.2 进程状态
+
+| 状态 | 说明 |
+|-----|------|
+| starting | 进程正在启动 |
+| running | 进程运行中，正在执行任务 |
+| idle | 进程运行中，等待输入 |
+| stopping | 进程正在停止 |
+| stopped | 进程已停止 |
+| error | 进程异常退出 |
+
+### 6.3 进程监控
+
+- 定期检查进程存活（通过 PID）
+- 检测进程异常退出，记录退出码
+- 监控进程资源使用（可选）
+- 检测 idle/running 状态变化
+
+### 6.4 IO 管理
+
+- 管理每个 Session 的 stdin/stdout/stderr
+- 支持 `attach` 命令连接终端
+- 支持 `inject` 命令写入 stdin
+- 日志记录所有 IO（用于 Tracing）
+
+### 6.5 消息注入机制
+
+消息注入通过向 Claude Code CLI 进程的 stdin 写入实现：
+
+1. 接收 `cld inject` 命令
+2. 查找目标 Session 的进程
+3. 格式化消息（可配置前缀/格式）
+4. 写入进程 stdin
+5. 记录注入事件到 Trace
+
+---
+
+## 7. Tracing 模块
+
+### 7.1 Hook 机制
+
+通过 Claude Code 原生 Hook 机制，Daemon 接收并记录以下事件：
+
+| 事件类型 | 说明 | 记录内容 |
+|---------|------|---------|
+| session_start | Session 开始 | session_id, agent, workdir, timestamp |
+| session_end | Session 结束 | session_id, duration, exit_code |
+| user_input | 用户输入 | content, timestamp |
+| assistant_response | 模型响应 | content, tokens, timestamp |
+| tool_call | 工具调用 | tool_name, params, result |
+| file_read | 文件读取 | file_path |
+| file_write | 文件写入 | file_path, size |
+| file_delete | 文件删除 | file_path |
+
+### 7.2 事件存储
+
+每个 Session 的事件存储在 JSONL 文件中：
+
+```
+~/.claude-daemon/sessions/<session_id>/trace/events.jsonl
+```
+
+**格式：**
+
+```jsonl
+{"ts":"2025-02-01T10:00:00Z","event":"session_start","session_id":"s001","agent":"DEV-AGENT"}
+{"ts":"2025-02-01T10:00:05Z","event":"user_input","content":"实现用户登录功能"}
+{"ts":"2025-02-01T10:00:10Z","event":"tool_call","tool":"write_file","params":{"path":"src/login.ts"}}
+{"ts":"2025-02-01T10:00:15Z","event":"assistant_response","tokens":{"input":150,"output":500}}
+```
+
+### 7.3 Session 分析
+
+Session 完成后，Analyzer 自动执行：
+
+#### 7.3.1 Session 分类
+
+将 Session 分为以下类型：
+
+| 类型 | 说明 |
+|-----|------|
+| coding | 编码开发 |
+| debugging | 调试修复 |
+| refactoring | 重构优化 |
+| documentation | 文档编写 |
+| configuration | 配置管理 |
+| exploration | 探索学习 |
+| other | 其他 |
+
+#### 7.3.2 统计分析
+
+生成 Session 统计摘要：
+
+```json
+{
+  "session_id": "session_001",
+  "classification": "coding",
+  "duration_seconds": 3600,
+  "tool_usage": {
+    "Edit": 15,
+    "Read": 23,
+    "Bash": 8,
+    "Write": 5
+  },
+  "files_modified": [
+    "src/auth.ts",
+    "src/login.ts"
+  ],
+  "tokens": {
+    "input": 15000,
+    "output": 8000
+  },
+  "git_repo": "my-project",
+  "branches": ["main", "feature/auth"]
+}
+```
+
+#### 7.3.3 多维索引
+
+建立索引支持快速查询：
+
+- 按 Agent 类型
+- 按日期
+- 按 Session 类型
+- 按项目/Git 仓库
+
+### 7.4 Web UI（可选）
+
+提供 Web 界面用于 Session 历史可视化：
+
+- Session 列表浏览
+- 统计图表
+- 详情查看
+- 搜索过滤
+
+**访问方式：**
+```bash
+cld daemon status  # 查看 Web UI 地址
+```
+
+---
+
+## 8. Session 数据模型
+
+### 8.1 Session 元信息 (meta.json)
 
 ```json
 {
   "session_id": "session_001",
   "name": "DEV-AGENT-001",
   "agent": "DEV-AGENT",
-  "workdir": "/path/to/workdir",
+  "workdir": "/path/to/project",
   "status": "running",
-  "task_desc": "实现用户认证模块",
   "pid": 12345,
+  "task_desc": "实现用户认证模块",
   "created_at": "2025-02-01T10:00:00Z",
-  "last_activity": "2025-02-01T12:30:00Z"
+  "started_at": "2025-02-01T10:00:01Z",
+  "completed_at": null,
+  "last_activity": "2025-02-01T12:30:00Z",
+  "classification": null,
+  "stats": {
+    "duration_seconds": 9000,
+    "tool_calls": 45,
+    "files_modified": 12,
+    "tokens_input": 15000,
+    "tokens_output": 8000
+  }
 }
 ```
 
-### 6.2 状态定义
+### 8.2 状态定义
 
-| 状态 | 说明 |
-|-----|------|
-| running | Session 正在执行任务 |
-| idle | Session 空闲，等待新任务 |
-
----
-
-## 7. 守护进程管理
-
-### 7.1 启动行为
-
-1. 读取全局配置
-2. 加载所有 Agent 配置
-3. 恢复之前未正常关闭的 Session（可选）
-4. 开始监听命令
-
-### 7.2 进程监控
-
-- 监控所有子进程（Claude Code CLI）状态
-- 检测进程异常退出，更新 Session 状态
-- 定期清理已结束的 Session 数据（可配置保留时长）
-
-### 7.3 日志管理
-
-```
-~/.claude-daemon/logs/
-├── daemon.log         # 守护进程日志
-├── session_001.log    # 各 Session 日志
-└── session_002.log
-```
+| 状态 | 说明 | 是否有进程 |
+|-----|------|----------|
+| running | 正在执行任务 | 是 |
+| idle | 等待输入 | 是 |
+| stopped | 已停止 | 否 |
+| error | 异常退出 | 否 |
 
 ---
 
-## 8. 错误处理
+## 9. 全局配置 (config.json)
 
-### 8.1 错误码
+```json
+{
+  "daemon": {
+    "socket_path": "~/.claude-daemon/daemon.sock",
+    "pid_file": "~/.claude-daemon/daemon.pid",
+    "log_level": "info"
+  },
+  "hook_server": {
+    "type": "unix_socket",
+    "path": "~/.claude-daemon/hook.sock"
+  },
+  "web_ui": {
+    "enabled": true,
+    "port": 3000
+  },
+  "storage": {
+    "base_path": "~/.claude-daemon",
+    "retention_days": 30
+  },
+  "process": {
+    "max_sessions": 50,
+    "health_check_interval": 5000,
+    "idle_timeout": null
+  }
+}
+```
+
+---
+
+## 10. 错误处理
+
+### 10.1 错误码
 
 | 错误码 | 说明 |
 |-------|------|
 | E001 | Agent 配置不存在 |
 | E002 | Session 不存在 |
 | E003 | Session 已停止，无法操作 |
-| E004 | 工作目录不存在 |
+| E004 | 工作目录不存在或无权限 |
 | E005 | 进程启动失败 |
 | E006 | 消息注入失败 |
 | E007 | 守护进程未运行 |
+| E008 | Hook 未安装 |
+| E009 | 已达到最大 Session 数量 |
 
-### 8.2 错误输出格式
+### 10.2 错误输出格式
 
 ```json
 {
@@ -513,46 +806,60 @@ Tracing 模块同时支持 Cowork（消息注入）功能的实现：
 
 ---
 
-## 9. 安全考虑
+## 11. 非功能性需求
 
-### 9.1 敏感信息处理
+### 11.1 性能要求
 
-- 环境变量中的 Token 等敏感信息支持引用外部环境变量（如 `${ANTHROPIC_AUTH_TOKEN}`）
+| 指标 | 目标 |
+|-----|------|
+| 并发 Session | 支持 50+ |
+| 命令响应时间 | < 100ms |
+| 进程启动时间 | < 2s |
+| Hook 事件处理延迟 | < 50ms |
+
+### 11.2 可靠性要求
+
+- Daemon 异常退出后，子进程继续运行
+- 重启 Daemon 后能识别已有运行中的 Session
+- 数据持久化，防止丢失
+
+### 11.3 安全考虑
+
+- 环境变量中的敏感信息支持引用外部变量
 - Tracing 数据可配置是否记录敏感内容
-- 日志脱敏处理
-
-### 9.2 权限控制
-
-- Daemon 以当前用户权限运行
-- Session 工作目录权限检查
-- 命令行接口不暴露网络端口（仅本地调用）
+- Unix Socket 通信，不暴露网络端口
+- 权限检查（工作目录、配置文件）
 
 ---
 
-## 10. 非功能性需求
+## 12. 实现路线图
 
-### 10.1 性能要求
+### Phase 1: 基础进程管理
+- [ ] `cld start` / `cld stop` 命令
+- [ ] 进程 PID 跟踪
+- [ ] Session 状态管理
+- [ ] `cld list` / `cld status` 命令
 
-- 支持同时运行 20+ Session
-- 命令响应时间 < 100ms
-- 进程启动时间 < 2s
+### Phase 2: 终端交互
+- [ ] `cld attach` 命令
+- [ ] IO 流管理
+- [ ] `cld inject` 消息注入
 
-### 10.2 可靠性要求
+### Phase 3: Tracing 增强
+- [ ] 整合现有 Hook 系统
+- [ ] Session 分析器完善
+- [ ] 索引系统
 
-- 守护进程异常退出后，子进程继续运行
-- 支持断点恢复（重启 Daemon 后能识别已有 Session）
-
-### 10.3 可观测性
-
-- 完整的日志记录
-- Session 生命周期事件追踪
-- 资源使用监控（可选）
+### Phase 4: 完善与优化
+- [ ] Web UI 整合
+- [ ] 性能优化
+- [ ] 文档完善
 
 ---
 
-## 11. 待定事项
+## 13. 待定事项
 
-- Claude Code Hook 的具体实现方式需确认
-- 消息注入的具体协议/格式需与 Claude Code 能力对齐
-- Tracing 数据的清理策略
-- 是否需要提供 HTTP API 接口（除命令行外）
+- 消息注入的具体格式/协议
+- Idle 状态检测的具体实现（监控 stdout 还是其他机制）
+- Web UI 是否整合到 SUMM Console
+- Session 数据清理策略的具体配置项
