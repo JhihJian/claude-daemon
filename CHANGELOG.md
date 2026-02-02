@@ -7,12 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.4.0] - 2026-02-02
+
+### Added
+- **🚀 Session Launcher System** - Complete session management with isolated workspaces
+  - Create sessions from agent configurations or existing directories
+  - Workspace isolation with independent environment variables
+  - Platform-specific launch scripts (Bash/PowerShell)
+  - Session lifecycle management (create, resume, list, delete)
+  - Security: file permissions (0600/0700), sensitive data hiding
+  - CLI commands: `launch`, `resume`, `sessions list`, `sessions delete`
+  - Agent configuration system in `~/.claude/agent-configs/`
+  - Session metadata storage in `~/.claude/sessions/metadata/`
+  - Launch scripts in `~/.claude/sessions/scripts/`
+- **Core Modules**
+  - `lib/session-storage.ts` - Metadata and launch script management
+  - `lib/session-validator.ts` - Input validation and security checks
+  - `daemon/session-manager.ts` - Session lifecycle orchestration
+  - `tools/SessionLauncher.ts` - Create and launch sessions
+  - `tools/SessionResume.ts` - Resume existing sessions
+  - `tools/SessionList.ts` - List and filter sessions
+  - `tools/SessionDelete.ts` - Delete sessions with confirmation
+- **Documentation**
+  - Comprehensive usage guide in README.md
+  - IMPLEMENTATION-SUMMARY.md with full implementation details
+  - TEST-REPORT.md with 28 test scenarios (all passed)
+  - test-session-management.ts automated test suite
+
 ### Changed
-- Streamlined documentation from 55+ files to 9 essential files
-- Merged QUICK-START.md into README.md for single entry point
-- Consolidated architecture documentation into single OVERVIEW.md
-- Removed process documentation (testing reports, release docs, legacy docs)
-- Simplified docs/README.md as navigation index
+- Updated `bin/cli.js` to integrate session management commands
+- Updated `install.sh` to create session launcher directories
+- Updated `install-windows-final.ps1` to create session launcher directories
+- Enhanced README.md with session launcher usage examples
+
+### Testing
+- 13 automated tests: all passed ✅
+- 15 real-world scenarios: all passed ✅
+- Total code: 2,432 lines across 9 new files
 
 ---
 
