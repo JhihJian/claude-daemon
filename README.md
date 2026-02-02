@@ -43,6 +43,14 @@
 - 📈 **图表展示** - 类型分布、工具使用统计
 - 🎨 **现代设计** - 响应式界面
 
+### 🚀 会话启动器（Session Launcher）⭐ 新功能
+- 🎯 **Agent 配置管理** - 预定义 Agent 配置，一键启动专用会话
+- 📁 **工作空间隔离** - 每个会话独立工作空间，互不干扰
+- 🔐 **环境变量隔离** - 会话级环境变量（代理、API 配置等）
+- 📜 **启动脚本生成** - 自动生成平台特定的启动脚本（Bash/PowerShell）
+- 🔄 **会话生命周期** - 创建、恢复、列表、删除完整管理
+- 🛡️ **安全设计** - 文件权限保护（0600/0700），敏感数据隐藏
+
 ### ⚡ 性能指标
 | 指标 | 数值 |
 |------|------|
@@ -361,6 +369,130 @@ echo "请帮我分析这个项目" | claude -p
 - 🌿 Git 仓库和分支信息
 - 📊 工具使用统计和成功率
 - 🏷️ 自动分类（coding, debugging, research 等）
+
+### 🚀 会话启动器（Session Launcher）⭐ 新功能
+
+会话启动器允许你创建和管理隔离的 Claude Code 会话，每个会话都有独立的工作空间和环境配置。
+
+#### 创建 Agent 配置
+
+首先，在 `~/.claude/agent-configs/` 目录下创建 Agent 配置：
+
+```bash
+# 创建 Agent 目录
+mkdir -p ~/.claude/agent-configs/coding-assistant
+
+# 创建 CLAUDE.md（Agent 指令）
+cat > ~/.claude/agent-configs/coding-assistant/CLAUDE.md << 'EOF'
+# Coding Assistant
+
+You are a professional coding assistant specialized in software development.
+
+## Capabilities
+- Write clean, maintainable code
+- Follow best practices and design patterns
+- Provide detailed code reviews
+- Debug complex issues
+EOF
+
+# 创建 config.json（可选）
+cat > ~/.claude/agent-configs/coding-assistant/config.json << 'EOF'
+{
+  "name": "coding-assistant",
+  "version": "1.0.0",
+  "description": "Professional coding assistant"
+}
+EOF
+```
+
+#### 启动新会话
+
+```bash
+# 使用 Agent 创建新会话
+claude-daemon launch --agent coding-assistant
+
+# 指定会话名称
+claude-daemon launch --agent coding-assistant --session my-project
+
+# 指定工作空间根目录
+claude-daemon launch --agent coding-assistant --workspace-root ~/projects
+
+# 使用现有目录（不需要 Agent）
+claude-daemon launch --dir /path/to/existing/project --session existing-project
+
+# 配置环境变量
+claude-daemon launch --agent coding-assistant \
+  --http-proxy http://proxy:8080 \
+  --https-proxy https://proxy:8080 \
+  --api-url https://api.anthropic.com \
+  --api-token sk-ant-xxx
+```
+
+#### 管理会话
+
+```bash
+# 列出所有会话
+claude-daemon sessions list
+
+# 按 Agent 筛选
+claude-daemon sessions list --agent coding-assistant
+
+# 显示最近访问的会话
+claude-daemon sessions list --recent
+
+# 显示完整路径
+claude-daemon sessions list --full
+
+# 恢复会话
+claude-daemon resume my-project
+
+# 删除会话（保留工作空间）
+claude-daemon sessions delete my-project
+
+# 删除会话和工作空间
+claude-daemon sessions delete my-project --with-workspace
+
+# 强制删除（跳过确认）
+claude-daemon sessions delete my-project --force
+```
+
+#### 直接运行启动脚本
+
+每个会话都会生成一个启动脚本，可以直接执行：
+
+```bash
+# Linux/macOS
+~/.claude/sessions/scripts/my-project.sh
+
+# Windows
+~/.claude/sessions/scripts/my-project.ps1
+```
+
+#### 会话目录结构
+
+```
+~/.claude/
+  sessions/
+    scripts/              # 启动脚本
+      my-project.sh
+    metadata/             # 会话元数据
+      my-project.json
+
+~/projects/               # 工作空间根目录
+  my-project/             # 会话工作空间
+    .claude/
+      CLAUDE.md           # Agent 指令
+      config.json         # Agent 配置
+      .env                # 环境变量（0600 权限）
+    # 你的项目文件
+```
+
+#### 安全特性
+
+- 🔐 **文件权限保护**：元数据和 .env 文件使用 0600 权限（仅所有者可读写）
+- 🔒 **启动脚本保护**：启动脚本使用 0700 权限（仅所有者可执行）
+- 🛡️ **敏感数据隐藏**：API token 等敏感信息在输出中显示为 `[hidden]`
+- 🔑 **环境隔离**：每个会话的环境变量完全隔离，互不影响
 
 ### 查询会话历史
 

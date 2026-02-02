@@ -34,13 +34,28 @@ function printBanner() {
 function printUsage() {
   console.log('使用方法:');
   console.log('');
-  log('green', '  claude-daemon install');
+  log('green', '安装:');
+  console.log('  claude-daemon install');
   console.log('    安装 Claude Code 会话历史系统');
   console.log('');
-  log('green', '  claude-daemon --help');
+  log('green', '会话管理:');
+  console.log('  claude-daemon launch --agent <name>');
+  console.log('    创建并启动新会话');
+  console.log('');
+  console.log('  claude-daemon resume <session-name>');
+  console.log('    恢复现有会话');
+  console.log('');
+  console.log('  claude-daemon sessions list');
+  console.log('    列出所有会话');
+  console.log('');
+  console.log('  claude-daemon sessions delete <session-name>');
+  console.log('    删除会话');
+  console.log('');
+  log('green', '其他:');
+  console.log('  claude-daemon --help');
   console.log('    显示帮助信息');
   console.log('');
-  log('green', '  claude-daemon --version');
+  console.log('  claude-daemon --version');
   console.log('    显示版本信息');
   console.log('');
 }
@@ -183,14 +198,96 @@ function printSuccess(platform) {
   console.log('');
 }
 
+/**
+ * Execute a TypeScript tool using Bun
+ */
+function executeTool(toolName, args = []) {
+  const packageDir = join(__dirname, '..');
+  const toolPath = join(packageDir, 'tools', `${toolName}.ts`);
+
+  if (!existsSync(toolPath)) {
+    log('red', `✗ Tool not found: ${toolName}`);
+    process.exit(1);
+  }
+
+  // Check if bun is available
+  try {
+    execSync('bun --version', { stdio: 'ignore' });
+  } catch (error) {
+    log('red', '✗ Bun is not installed or not in PATH');
+    log('yellow', 'Please install Bun: https://bun.sh');
+    process.exit(1);
+  }
+
+  // Execute the tool
+  const child = spawn('bun', [toolPath, ...args], {
+    stdio: 'inherit',
+    cwd: packageDir,
+  });
+
+  child.on('close', (code) => {
+    process.exit(code || 0);
+  });
+
+  child.on('error', (error) => {
+    log('red', `✗ Failed to execute tool: ${error.message}`);
+    process.exit(1);
+  });
+}
+
 // 主函数
 function main() {
   const args = process.argv.slice(2);
   const command = args[0];
+  const subcommand = args[1];
 
   switch (command) {
     case 'install':
       install();
+      break;
+
+    case 'launch':
+      // claude-daemon launch --agent <name> [options]
+      executeTool('SessionLauncher', args.slice(1));
+      break;
+
+    case 'resume':
+      // claude-daemon resume <session-name>
+      if (!subcommand) {
+        log('red', '✗ Session name is required');
+        console.log('Usage: claude-daemon resume <session-name>');
+        process.exit(1);
+      }
+      executeTool('SessionResume', args.slice(1));
+      break;
+
+    case 'sessions':
+      // claude-daemon sessions <subcommand>
+      if (!subcommand) {
+        log('red', '✗ Subcommand is required');
+        console.log('Available subcommands: list, delete');
+        process.exit(1);
+      }
+
+      switch (subcommand) {
+        case 'list':
+          executeTool('SessionList', args.slice(2));
+          break;
+
+        case 'delete':
+          if (!args[2]) {
+            log('red', '✗ Session name is required');
+            console.log('Usage: claude-daemon sessions delete <session-name>');
+            process.exit(1);
+          }
+          executeTool('SessionDelete', args.slice(2));
+          break;
+
+        default:
+          log('red', `✗ Unknown subcommand: ${subcommand}`);
+          console.log('Available subcommands: list, delete');
+          process.exit(1);
+      }
       break;
 
     case '--version':
